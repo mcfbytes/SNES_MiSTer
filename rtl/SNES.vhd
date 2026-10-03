@@ -338,6 +338,7 @@ begin
 		VRAM_WRB_N	=> VRAM_WRB_N,
 		
 		EXTLATCH		=> JPIO67(7) and JOY2_P6_in,
+		WRIO7			=> JPIO67(7),
 		
 		BLEND			=> BLEND,
 		PAL			=> PAL,

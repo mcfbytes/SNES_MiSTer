@@ -30,6 +30,7 @@ entity SPPU is
 		VRAM_RD_N	: out std_logic;
 		
 		EXTLATCH		: in std_logic;
+		WRIO7			: in std_logic;
 		
 		PAL			: in std_logic;
 		BLEND			: in std_logic;
@@ -680,7 +681,7 @@ begin
 			EXTLATCHr <= EXTLATCH;
 			PARD_Nr <= PARD_N;
 			if (EXTLATCH = '0' and EXTLATCHr = '1') or 
-				(PARD_N = '0' and PARD_Nr = '1' and PA = x"37") then	--SLHV 
+				(PARD_N = '0' and PARD_Nr = '1' and PA = x"37" and WRIO7 = '1') then	--SLHV, only while $4201.7 is set 
 				OPHCT <= std_logic_vector(H_CNT);
 				OPVCT <= std_logic_vector(V_CNT);	
 				F_LATCH <= '1';
