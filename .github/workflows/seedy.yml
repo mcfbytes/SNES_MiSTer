@@ -1,0 +1,62 @@
+# MiSTer Seedy (mcfbytes/Seedy_MiSTer): multi-seed Quartus timing comparison on the self-hosted runner.
+# Manual runs only: Actions -> Seedy -> Run workflow (or gh workflow run seedy.yml -f candidate_ref=...).
+name: Seedy
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "compare: candidate vs baseline. hunt: try seeds until some meet timing."
+        type: choice
+        options: [compare, hunt]
+        default: compare
+      candidate_ref:
+        description: "branch/tag/SHA to evaluate (empty = the ref this run is on)"
+        default: ""
+      baseline_ref:
+        description: "branch/tag/SHA to compare against (empty = default branch)"
+        default: ""
+      seed_count:
+        description: "compare: fitter seeds per variant (seeds 1..N)"
+        default: "30"
+      max_seeds:
+        description: "hunt: give up after this many seeds"
+        default: "100"
+      min_met:
+        description: "hunt: stop once this many seeds meet timing"
+        default: "1"
+      seed_start:
+        description: "hunt: first seed"
+        default: "1"
+      per_job_concurrency:
+        description: "compiles in flight on the runner (fixed: the box also runs other CI)"
+        default: "3"
+
+permissions:
+  contents: read
+
+jobs:
+  seedy:
+    concurrency:
+      group: seedy-${{ inputs.candidate_ref || github.ref }}
+      cancel-in-progress: false
+    uses: mcfbytes/Seedy_MiSTer/.github/workflows/seedy.yml@master
+    permissions:
+      contents: write
+      actions: read
+    with:
+      mode: ${{ inputs.mode || 'compare' }}
+      candidate_ref: ${{ inputs.candidate_ref }}
+      baseline_ref: ${{ inputs.baseline_ref }}
+      seed_count: ${{ fromJSON(inputs.seed_count || '30') }}
+      max_seeds: ${{ fromJSON(inputs.max_seeds || '100') }}
+      min_met: ${{ fromJSON(inputs.min_met || '1') }}
+      seed_start: ${{ fromJSON(inputs.seed_start || '1') }}
+      quartus_version: "17.0.2"
+      runs_on: '["self-hosted", "linux", "quartus"]'
+      light_runs_on: '["self-hosted", "linux", "quartus"]'
+      shards: 1
+      per_job_concurrency: ${{ inputs.per_job_concurrency || '3' }}
+      threads_per_compile: 4
+      compile_peak_gb: 7
+      job_timeout_minutes: 720
