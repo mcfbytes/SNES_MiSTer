@@ -127,8 +127,9 @@ architecture rtl of SCPU is
 	signal HBLANK_FF, VBLANK_FF : std_logic_vector(1 downto 0);
 	signal H6_VBLANK_FF : std_logic;
 	signal FALLING_VBLANK, LONG_FALLING_VBLANK : std_logic;
-	signal IRQ_TIME_FF : std_logic_vector(1 downto 0);
+	signal IRQ_TIME_FF : std_logic_vector(2 downto 0);
 	signal IRQ_TIME_FF2 : std_logic;
+	signal IRQ_SET_D : std_logic_vector(1 downto 0);
 	
 	signal REFRESH_EN, REFRESH_EN2, REFRESH_EN3 : std_logic;
 	signal REFRESHED : std_logic;
@@ -537,6 +538,7 @@ begin
 			H6_VBLANK_FF <= '0';
 			IRQ_TIME_FF <= (others => '0');
 			IRQ_TIME_FF2 <= '0';
+			IRQ_SET_D <= (others => '0');
 			H_CNT <= (others => '0');
 			V_CNT <= (others => '0');
 			NMI_FLAG <= '0'; 
@@ -608,17 +610,18 @@ begin
 				
 				--HV IRQ
 				if CLK4_CE_R = '1' then
-					IRQ_TIME_FF <= IRQ_TIME_FF(0)&IRQ_TIME;
+					IRQ_TIME_FF <= IRQ_TIME_FF(1 downto 0)&IRQ_TIME;
 				end if;
-				if IRQ_TIME_FF = "01" then
+				if IRQ_TIME_FF(2 downto 1) = "01" then
 					IRQ_TIME_FF2 <= '1'; 
 				else
 					IRQ_TIME_FF2 <= '0'; 
 				end if;
 					
+				IRQ_SET_D <= IRQ_SET_D(0) & IRQ_TIME_FF2;	--with the extra FF stage: flag 6 clocks later, H=HTIME+3.5 (V-only H=2.5)
 				if HVIRQ_EN = "00" then
 					IRQ_FLAG <= '0'; 
-				elsif IRQ_TIME_FF2 = '1' then
+				elsif IRQ_SET_D(1) = '1' then
 					IRQ_FLAG <= '1'; 
 				elsif TIMEUP_READ = '1' and INT_CLKF_CE = '1' then
 					IRQ_FLAG <= '0'; 
