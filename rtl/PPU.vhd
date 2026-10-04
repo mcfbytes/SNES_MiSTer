@@ -307,6 +307,9 @@ signal BRIGHT_MAIN_B		: std_logic_vector(7 downto 0);
 signal BRIGHT_SUB_R		: std_logic_vector(7 downto 0);
 signal BRIGHT_SUB_G		: std_logic_vector(7 downto 0);
 signal BRIGHT_SUB_B		: std_logic_vector(7 downto 0);
+constant PIX_OUT_DLY		: integer := 3;
+type PixDly_t is array(0 to PIX_OUT_DLY) of std_logic_vector(47 downto 0);
+signal PIX_DLY			: PixDly_t;
 signal MATH_X				: unsigned(7 downto 0);
 signal MATH_Y				: unsigned(7 downto 0);
 	
@@ -873,8 +876,8 @@ begin
 				FIRST_VBLANK_LINE <= '0';
 			end if;
 			
-			if H_CNT = 20-1  then HDE <= '1'; end if;
-			if H_CNT = 276-1 then HDE <= '0'; end if;
+			if H_CNT = 20-1+PIX_OUT_DLY  then HDE <= '1'; end if;
+			if H_CNT = 276-1+PIX_OUT_DLY then HDE <= '0'; end if;
 
 			if H_CNT = HSYNC_START then HSYNC <= '1'; end if;
 			if H_CNT = HSYNC_START+23 then HSYNC <= '0'; end if;
@@ -2535,9 +2538,22 @@ begin
 	end if;
 end process;
 
+-- Pixel x leaves PIX_OUT_DLY dots later, so force blank is sampled at H = x+19+PIX_OUT_DLY.
+PIX_DLY(0) <= BRIGHT_SUB_B & BRIGHT_SUB_G & BRIGHT_SUB_R & BRIGHT_MAIN_B & BRIGHT_MAIN_G & BRIGHT_MAIN_R;
+process( CLK )
+begin
+	if rising_edge(CLK) then
+		if DOT_CLKR_CE = '1' then
+			for i in 1 to PIX_OUT_DLY loop
+				PIX_DLY(i) <= PIX_DLY(i-1);
+			end loop;
+		end if;
+	end if;
+end process;
+
 COLOR_OUT <= (others => '0') when BG_FORCE_BLANK = '1' else
-             BRIGHT_SUB_B  & BRIGHT_SUB_G  & BRIGHT_SUB_R when DOT_CLK = '1' else
-				 BRIGHT_MAIN_B & BRIGHT_MAIN_G & BRIGHT_MAIN_R;
+             PIX_DLY(PIX_OUT_DLY)(47 downto 24) when DOT_CLK = '1' else
+				 PIX_DLY(PIX_OUT_DLY)(23 downto 0);
 DOTCLK <= DOT_CLK;
 HBLANK <= IN_HBL;
 VBLANK <= IN_VBL;
