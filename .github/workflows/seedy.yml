@@ -29,8 +29,8 @@ on:
         description: "hunt: first seed"
         default: "1"
       per_job_concurrency:
-        description: "compiles in flight on the runner (fixed: the box also runs other CI)"
-        default: "3"
+        description: "compiles in flight on the runner (fixed: the box also runs other CI; ~6.5 GB each at the .qsf's ALL, so 7 needs WSL memory=56GB)"
+        default: "7"
 
 permissions:
   contents: read
@@ -56,7 +56,6 @@ jobs:
       runs_on: '["self-hosted", "linux", "quartus"]'
       light_runs_on: '["self-hosted", "linux", "quartus"]'
       shards: 1
-      per_job_concurrency: ${{ inputs.per_job_concurrency || '3' }}
-      threads_per_compile: 4
+      per_job_concurrency: ${{ inputs.per_job_concurrency || '7' }}
       compile_peak_gb: 7
       job_timeout_minutes: 720
