@@ -470,6 +470,11 @@ begin
 				VRAMRD_CNT <= VRAMRD_CNT + 1;
 			end if;
 			
+			-- Force blank acts while /PAWR is low, as on hardware, not at the end of the bus cycle.
+			if PAWR_N = '0' and PA = x"00" then
+				FORCE_BLANK <= DI(7);
+			end if;
+
 			if PAWR_N = '0' and SYSCLK_CE = '1' then
 				case PA is
 					when x"00" =>						--INIDISP
