@@ -178,6 +178,15 @@ signal BG_MODE_SYNC		: std_logic_vector(2 downto 0);
 signal BG_MODE_TILE_SYNC		: std_logic_vector(2 downto 0);
 signal SPR_GET_PIXEL 	: std_logic;
 signal BG_GET_PIXEL 		: std_logic;
+constant PIPE_DLY			: integer := 3;
+type PixPipe_t is array(1 to PIPE_DLY) of std_logic_vector(48 downto 0);
+signal PIX_PIPE			: PixPipe_t;
+signal BG1_PIX_D			: std_logic_vector(11 downto 0);
+signal BG2_PIX_D			: std_logic_vector(7 downto 0);
+signal BG3_PIX_D			: std_logic_vector(5 downto 0);
+signal BG4_PIX_D			: std_logic_vector(5 downto 0);
+signal SPR_PIX_D2			: std_logic_vector(8 downto 0);
+signal WIN_X_D			: unsigned(7 downto 0);
 signal BG_MATH 			: std_logic;
 signal BG_OUT 				: std_logic;
 signal GET_PIXEL_X		: unsigned(7 downto 0);
@@ -873,8 +882,8 @@ begin
 				FIRST_VBLANK_LINE <= '0';
 			end if;
 			
-			if H_CNT = 20-1  then HDE <= '1'; end if;
-			if H_CNT = 276-1 then HDE <= '0'; end if;
+			if H_CNT = 20-1+PIPE_DLY  then HDE <= '1'; end if;
+			if H_CNT = 276-1+PIPE_DLY then HDE <= '0'; end if;
 
 			if H_CNT = HSYNC_START then HSYNC <= '1'; end if;
 			if H_CNT = HSYNC_START+23 then HSYNC <= '0'; end if;
@@ -922,13 +931,13 @@ begin
 		BG_GET_PIXEL <= '0';
 	end if;
 	
-	if H_CNT >= BG_MATH_START and H_CNT <= BG_MATH_END and V_CNT >= 1 and V_CNT <= LAST_VIS_LINE then
+	if H_CNT >= BG_MATH_START+PIPE_DLY and H_CNT <= BG_MATH_END+PIPE_DLY and V_CNT >= 1 and V_CNT <= LAST_VIS_LINE then
 		BG_MATH <= '1';
 	else
 		BG_MATH <= '0';
 	end if;
 	
-	if H_CNT >= BG_OUT_START and H_CNT <= BG_OUT_END and V_CNT >= 1 and V_CNT <= LAST_VIS_LINE then
+	if H_CNT >= BG_OUT_START+PIPE_DLY and H_CNT <= BG_OUT_END+PIPE_DLY and V_CNT >= 1 and V_CNT <= LAST_VIS_LINE then
 		BG_OUT <= '1';
 	else
 		BG_OUT <= '0';
@@ -1972,8 +1981,27 @@ begin
 end process;
 
 
+-- Pixel x reaches the math stage PIPE_DLY dots after it is fetched: H = x+18+PIPE_DLY.
+process( CLK )
+begin
+	if rising_edge(CLK) then
+		if ENABLE = '1' and DOT_CLKR_CE = '1' then
+			PIX_PIPE(1) <= BG1_PIX_DATA & BG2_PIX_DATA & BG3_PIX_DATA & BG4_PIX_DATA & SPR_PIX_DATA & std_logic_vector(WINDOW_X);
+			for i in 2 to PIPE_DLY loop
+				PIX_PIPE(i) <= PIX_PIPE(i-1);
+			end loop;
+		end if;
+	end if;
+end process;
+BG1_PIX_D <= PIX_PIPE(PIPE_DLY)(48 downto 37);
+BG2_PIX_D <= PIX_PIPE(PIPE_DLY)(36 downto 29);
+BG3_PIX_D <= PIX_PIPE(PIPE_DLY)(28 downto 23);
+BG4_PIX_D <= PIX_PIPE(PIPE_DLY)(22 downto 17);
+SPR_PIX_D2 <= PIX_PIPE(PIPE_DLY)(16 downto 8);
+WIN_X_D <= unsigned(PIX_PIPE(PIPE_DLY)(7 downto 0));
+
 process( RST_N, CLK, W12SEL, W34SEL, WOBJSEL, WBGLOG, WOBJLOG, CGWSEL, CGADSUB, TMW, TSW, TM, TS, BG_MODE_SYNC, BG3PRIO, M7EXTBG,
-			WIN_ACTIVE, WIN_STOP, SPR_PIX_DATA, BG1_PIX_DATA, BG2_PIX_DATA, BG3_PIX_DATA, BG4_PIX_DATA, DOT_CLK, BG_EN)
+			WIN_ACTIVE, WIN_STOP, SPR_PIX_D2, BG1_PIX_D, BG2_PIX_D, BG3_PIX_D, BG4_PIX_D, DOT_CLK, BG_EN)
 variable PAL1,PAL2,PAL3,PAL4,OBJ_PAL : std_logic_vector(7 downto 0);
 variable PRIO1,PRIO2,PRIO3,PRIO4 : std_logic;
 variable BGPR0EN, BGPR1EN : std_logic_vector(3 downto 0);
@@ -2047,12 +2075,12 @@ begin
 	DCM := '0';
 	MATH := '0';
 	
-	OBJ_PRIO := SPR_PIX_DATA(8 downto 7);
+	OBJ_PRIO := SPR_PIX_D2(8 downto 7);
 
-	PRIO1 := BG1_PIX_DATA(11);
-	PRIO2 := BG2_PIX_DATA(7);
-	PRIO3 := BG3_PIX_DATA(5);
-	PRIO4 := BG4_PIX_DATA(5);
+	PRIO1 := BG1_PIX_D(11);
+	PRIO2 := BG2_PIX_D(7);
+	PRIO3 := BG3_PIX_D(5);
+	PRIO4 := BG4_PIX_D(5);
 	
 	if DOT_CLK = '1' then
 		BGPR0EN(0) := TS(0) and (not sub_dis(0)) and (not PRIO1) and BG_EN(0);
@@ -2083,41 +2111,41 @@ begin
 	end if;
 	
 	if BG_MODE_SYNC = "000" then	-- MODE0
-		if SPR_PIX_DATA(3 downto 0) /= "0000" and OBJPR3EN = '1' then
-			CGRAM_FETCH_ADDR <= "1" & SPR_PIX_DATA(6 downto 0);
-			MATH := CGADSUB(4) and SPR_PIX_DATA(6);
-		elsif BG1_PIX_DATA(1 downto 0) /= "00" and BGPR1EN(0) = '1' then
-			CGRAM_FETCH_ADDR <= "000" & BG1_PIX_DATA(10 downto 8) & BG1_PIX_DATA(1 downto 0);
+		if SPR_PIX_D2(3 downto 0) /= "0000" and OBJPR3EN = '1' then
+			CGRAM_FETCH_ADDR <= "1" & SPR_PIX_D2(6 downto 0);
+			MATH := CGADSUB(4) and SPR_PIX_D2(6);
+		elsif BG1_PIX_D(1 downto 0) /= "00" and BGPR1EN(0) = '1' then
+			CGRAM_FETCH_ADDR <= "000" & BG1_PIX_D(10 downto 8) & BG1_PIX_D(1 downto 0);
 			MATH := CGADSUB(0);
-		elsif BG2_PIX_DATA(1 downto 0) /= "00" and BGPR1EN(1) = '1' then
-			CGRAM_FETCH_ADDR <= "001" & BG2_PIX_DATA(6 downto 4) & BG2_PIX_DATA(1 downto 0);
+		elsif BG2_PIX_D(1 downto 0) /= "00" and BGPR1EN(1) = '1' then
+			CGRAM_FETCH_ADDR <= "001" & BG2_PIX_D(6 downto 4) & BG2_PIX_D(1 downto 0);
 			MATH := CGADSUB(1);
-		elsif SPR_PIX_DATA(3 downto 0) /= "0000" and OBJPR2EN = '1' then
-			CGRAM_FETCH_ADDR <= "1" & SPR_PIX_DATA(6 downto 0);
-			MATH := CGADSUB(4) and SPR_PIX_DATA(6);
-		elsif BG1_PIX_DATA(1 downto 0) /= "00" and BGPR0EN(0) = '1' then
-			CGRAM_FETCH_ADDR <= "000" & BG1_PIX_DATA(10 downto 8) & BG1_PIX_DATA(1 downto 0);
+		elsif SPR_PIX_D2(3 downto 0) /= "0000" and OBJPR2EN = '1' then
+			CGRAM_FETCH_ADDR <= "1" & SPR_PIX_D2(6 downto 0);
+			MATH := CGADSUB(4) and SPR_PIX_D2(6);
+		elsif BG1_PIX_D(1 downto 0) /= "00" and BGPR0EN(0) = '1' then
+			CGRAM_FETCH_ADDR <= "000" & BG1_PIX_D(10 downto 8) & BG1_PIX_D(1 downto 0);
 			MATH := CGADSUB(0);
-		elsif BG2_PIX_DATA(1 downto 0) /= "00" and BGPR0EN(1) = '1' then
-			CGRAM_FETCH_ADDR <= "001" & BG2_PIX_DATA(6 downto 4) & BG2_PIX_DATA(1 downto 0);
+		elsif BG2_PIX_D(1 downto 0) /= "00" and BGPR0EN(1) = '1' then
+			CGRAM_FETCH_ADDR <= "001" & BG2_PIX_D(6 downto 4) & BG2_PIX_D(1 downto 0);
 			MATH := CGADSUB(1);
-		elsif SPR_PIX_DATA(3 downto 0) /= "0000" and OBJPR1EN = '1' then
-			CGRAM_FETCH_ADDR <= "1" & SPR_PIX_DATA(6 downto 0);
-			MATH := CGADSUB(4) and SPR_PIX_DATA(6);
-		elsif BG3_PIX_DATA(1 downto 0) /= "00" and BGPR1EN(2) = '1' then
-			CGRAM_FETCH_ADDR <= "010" & BG3_PIX_DATA(4 downto 2) & BG3_PIX_DATA(1 downto 0);
+		elsif SPR_PIX_D2(3 downto 0) /= "0000" and OBJPR1EN = '1' then
+			CGRAM_FETCH_ADDR <= "1" & SPR_PIX_D2(6 downto 0);
+			MATH := CGADSUB(4) and SPR_PIX_D2(6);
+		elsif BG3_PIX_D(1 downto 0) /= "00" and BGPR1EN(2) = '1' then
+			CGRAM_FETCH_ADDR <= "010" & BG3_PIX_D(4 downto 2) & BG3_PIX_D(1 downto 0);
 			MATH := CGADSUB(2);
-		elsif BG4_PIX_DATA(1 downto 0) /= "00" and BGPR1EN(3) = '1' then
-			CGRAM_FETCH_ADDR <= "011" & BG4_PIX_DATA(4 downto 2) & BG4_PIX_DATA(1 downto 0);
+		elsif BG4_PIX_D(1 downto 0) /= "00" and BGPR1EN(3) = '1' then
+			CGRAM_FETCH_ADDR <= "011" & BG4_PIX_D(4 downto 2) & BG4_PIX_D(1 downto 0);
 			MATH := CGADSUB(3);
-		elsif SPR_PIX_DATA(3 downto 0) /= "0000" and OBJPR0EN = '1' then
-			CGRAM_FETCH_ADDR <= "1" & SPR_PIX_DATA(6 downto 0);
-			MATH := CGADSUB(4) and SPR_PIX_DATA(6);
-		elsif BG3_PIX_DATA(1 downto 0) /= "00" and BGPR0EN(2) = '1' then
-			CGRAM_FETCH_ADDR <= "010" & BG3_PIX_DATA(4 downto 2) & BG3_PIX_DATA(1 downto 0);
+		elsif SPR_PIX_D2(3 downto 0) /= "0000" and OBJPR0EN = '1' then
+			CGRAM_FETCH_ADDR <= "1" & SPR_PIX_D2(6 downto 0);
+			MATH := CGADSUB(4) and SPR_PIX_D2(6);
+		elsif BG3_PIX_D(1 downto 0) /= "00" and BGPR0EN(2) = '1' then
+			CGRAM_FETCH_ADDR <= "010" & BG3_PIX_D(4 downto 2) & BG3_PIX_D(1 downto 0);
 			MATH := CGADSUB(2);
-		elsif BG4_PIX_DATA(1 downto 0) /= "00" and BGPR0EN(3) = '1' then
-			CGRAM_FETCH_ADDR <= "011" & BG4_PIX_DATA(4 downto 2) & BG4_PIX_DATA(1 downto 0);
+		elsif BG4_PIX_D(1 downto 0) /= "00" and BGPR0EN(3) = '1' then
+			CGRAM_FETCH_ADDR <= "011" & BG4_PIX_D(4 downto 2) & BG4_PIX_D(1 downto 0);
 			MATH := CGADSUB(3);
 		else
 			CGRAM_FETCH_ADDR <= (others => '0');
@@ -2126,38 +2154,38 @@ begin
 		end if;
 		
 	elsif BG_MODE_SYNC = "001" then	-- MODE1
-		if BG3_PIX_DATA(1 downto 0) /= "00" and BGPR1EN(2) = '1' and BG3PRIO = '1' then
-			CGRAM_FETCH_ADDR <= "000" & BG3_PIX_DATA(4 downto 2) & BG3_PIX_DATA(1 downto 0);
+		if BG3_PIX_D(1 downto 0) /= "00" and BGPR1EN(2) = '1' and BG3PRIO = '1' then
+			CGRAM_FETCH_ADDR <= "000" & BG3_PIX_D(4 downto 2) & BG3_PIX_D(1 downto 0);
 			MATH := CGADSUB(2);
-		elsif SPR_PIX_DATA(3 downto 0) /= "0000" and OBJPR3EN = '1' then
-			CGRAM_FETCH_ADDR <= "1" & SPR_PIX_DATA(6 downto 0);
-			MATH := CGADSUB(4) and SPR_PIX_DATA(6);
-		elsif BG1_PIX_DATA(3 downto 0) /= "0000" and BGPR1EN(0) = '1' then
-			CGRAM_FETCH_ADDR <= "0" & BG1_PIX_DATA(10 downto 8) & BG1_PIX_DATA(3 downto 0);
+		elsif SPR_PIX_D2(3 downto 0) /= "0000" and OBJPR3EN = '1' then
+			CGRAM_FETCH_ADDR <= "1" & SPR_PIX_D2(6 downto 0);
+			MATH := CGADSUB(4) and SPR_PIX_D2(6);
+		elsif BG1_PIX_D(3 downto 0) /= "0000" and BGPR1EN(0) = '1' then
+			CGRAM_FETCH_ADDR <= "0" & BG1_PIX_D(10 downto 8) & BG1_PIX_D(3 downto 0);
 			MATH := CGADSUB(0);
-		elsif BG2_PIX_DATA(3 downto 0) /= "0000" and BGPR1EN(1) = '1' then
-			CGRAM_FETCH_ADDR <= "0" & BG2_PIX_DATA(6 downto 4) & BG2_PIX_DATA(3 downto 0);
+		elsif BG2_PIX_D(3 downto 0) /= "0000" and BGPR1EN(1) = '1' then
+			CGRAM_FETCH_ADDR <= "0" & BG2_PIX_D(6 downto 4) & BG2_PIX_D(3 downto 0);
 			MATH := CGADSUB(1);
-		elsif SPR_PIX_DATA(3 downto 0) /= "0000" and OBJPR2EN = '1' then
-			CGRAM_FETCH_ADDR <= "1" & SPR_PIX_DATA(6 downto 0);
-			MATH := CGADSUB(4) and SPR_PIX_DATA(6);
-		elsif BG1_PIX_DATA(3 downto 0) /= "0000" and BGPR0EN(0) = '1' then
-			CGRAM_FETCH_ADDR <= "0" & BG1_PIX_DATA(10 downto 8) & BG1_PIX_DATA(3 downto 0);
+		elsif SPR_PIX_D2(3 downto 0) /= "0000" and OBJPR2EN = '1' then
+			CGRAM_FETCH_ADDR <= "1" & SPR_PIX_D2(6 downto 0);
+			MATH := CGADSUB(4) and SPR_PIX_D2(6);
+		elsif BG1_PIX_D(3 downto 0) /= "0000" and BGPR0EN(0) = '1' then
+			CGRAM_FETCH_ADDR <= "0" & BG1_PIX_D(10 downto 8) & BG1_PIX_D(3 downto 0);
 			MATH := CGADSUB(0);
-		elsif BG2_PIX_DATA(3 downto 0) /= "0000" and BGPR0EN(1) = '1' then
-			CGRAM_FETCH_ADDR <= "0" & BG2_PIX_DATA(6 downto 4) & BG2_PIX_DATA(3 downto 0);
+		elsif BG2_PIX_D(3 downto 0) /= "0000" and BGPR0EN(1) = '1' then
+			CGRAM_FETCH_ADDR <= "0" & BG2_PIX_D(6 downto 4) & BG2_PIX_D(3 downto 0);
 			MATH := CGADSUB(1);
-		elsif SPR_PIX_DATA(3 downto 0) /= "0000" and OBJPR1EN = '1' then
-			CGRAM_FETCH_ADDR <= "1" & SPR_PIX_DATA(6 downto 0);
-			MATH := CGADSUB(4) and SPR_PIX_DATA(6);
-		elsif BG3_PIX_DATA(1 downto 0) /= "00" and BGPR1EN(2) = '1' and BG3PRIO = '0' then
-			CGRAM_FETCH_ADDR <= "000" & BG3_PIX_DATA(4 downto 2) & BG3_PIX_DATA(1 downto 0);
+		elsif SPR_PIX_D2(3 downto 0) /= "0000" and OBJPR1EN = '1' then
+			CGRAM_FETCH_ADDR <= "1" & SPR_PIX_D2(6 downto 0);
+			MATH := CGADSUB(4) and SPR_PIX_D2(6);
+		elsif BG3_PIX_D(1 downto 0) /= "00" and BGPR1EN(2) = '1' and BG3PRIO = '0' then
+			CGRAM_FETCH_ADDR <= "000" & BG3_PIX_D(4 downto 2) & BG3_PIX_D(1 downto 0);
 			MATH := CGADSUB(2);
-		elsif SPR_PIX_DATA(3 downto 0) /= "0000" and OBJPR0EN = '1' then
-			CGRAM_FETCH_ADDR <= "1" & SPR_PIX_DATA(6 downto 0);
-			MATH := CGADSUB(4) and SPR_PIX_DATA(6);
-		elsif BG3_PIX_DATA(1 downto 0) /= "00" and BGPR0EN(2) = '1' then
-			CGRAM_FETCH_ADDR <= "000" & BG3_PIX_DATA(4 downto 2) & BG3_PIX_DATA(1 downto 0);
+		elsif SPR_PIX_D2(3 downto 0) /= "0000" and OBJPR0EN = '1' then
+			CGRAM_FETCH_ADDR <= "1" & SPR_PIX_D2(6 downto 0);
+			MATH := CGADSUB(4) and SPR_PIX_D2(6);
+		elsif BG3_PIX_D(1 downto 0) /= "00" and BGPR0EN(2) = '1' then
+			CGRAM_FETCH_ADDR <= "000" & BG3_PIX_D(4 downto 2) & BG3_PIX_D(1 downto 0);
 			MATH := CGADSUB(2);
 		else
 			CGRAM_FETCH_ADDR <= (others => '0');
@@ -2166,29 +2194,29 @@ begin
 		end if;
 		
 	elsif BG_MODE_SYNC = "010" then	-- MODE2
-		if SPR_PIX_DATA(3 downto 0) /= "0000" and OBJPR3EN = '1' then
-			CGRAM_FETCH_ADDR <= "1" & SPR_PIX_DATA(6 downto 0);
-			MATH := CGADSUB(4) and SPR_PIX_DATA(6);
-		elsif BG1_PIX_DATA(3 downto 0) /= "0000" and BGPR1EN(0) = '1' then
-			CGRAM_FETCH_ADDR <= "0" & BG1_PIX_DATA(10 downto 8) & BG1_PIX_DATA(3 downto 0);
+		if SPR_PIX_D2(3 downto 0) /= "0000" and OBJPR3EN = '1' then
+			CGRAM_FETCH_ADDR <= "1" & SPR_PIX_D2(6 downto 0);
+			MATH := CGADSUB(4) and SPR_PIX_D2(6);
+		elsif BG1_PIX_D(3 downto 0) /= "0000" and BGPR1EN(0) = '1' then
+			CGRAM_FETCH_ADDR <= "0" & BG1_PIX_D(10 downto 8) & BG1_PIX_D(3 downto 0);
 			MATH := CGADSUB(0);
-		elsif SPR_PIX_DATA(3 downto 0) /= "0000" and OBJPR2EN = '1' then
-			CGRAM_FETCH_ADDR <= "1" & SPR_PIX_DATA(6 downto 0);
-			MATH := CGADSUB(4) and SPR_PIX_DATA(6);
-		elsif BG2_PIX_DATA(3 downto 0) /= "0000" and BGPR1EN(1) = '1' then
-			CGRAM_FETCH_ADDR <= "0" & BG2_PIX_DATA(6 downto 4) & BG2_PIX_DATA(3 downto 0);
+		elsif SPR_PIX_D2(3 downto 0) /= "0000" and OBJPR2EN = '1' then
+			CGRAM_FETCH_ADDR <= "1" & SPR_PIX_D2(6 downto 0);
+			MATH := CGADSUB(4) and SPR_PIX_D2(6);
+		elsif BG2_PIX_D(3 downto 0) /= "0000" and BGPR1EN(1) = '1' then
+			CGRAM_FETCH_ADDR <= "0" & BG2_PIX_D(6 downto 4) & BG2_PIX_D(3 downto 0);
 			MATH := CGADSUB(1);
-		elsif SPR_PIX_DATA(3 downto 0) /= "0000" and OBJPR1EN = '1' then
-			CGRAM_FETCH_ADDR <= "1" & SPR_PIX_DATA(6 downto 0);
-			MATH := CGADSUB(4) and SPR_PIX_DATA(6);
-		elsif BG1_PIX_DATA(3 downto 0) /= "0000" and BGPR0EN(0) = '1' then
-			CGRAM_FETCH_ADDR <= "0" & BG1_PIX_DATA(10 downto 8) & BG1_PIX_DATA(3 downto 0);
+		elsif SPR_PIX_D2(3 downto 0) /= "0000" and OBJPR1EN = '1' then
+			CGRAM_FETCH_ADDR <= "1" & SPR_PIX_D2(6 downto 0);
+			MATH := CGADSUB(4) and SPR_PIX_D2(6);
+		elsif BG1_PIX_D(3 downto 0) /= "0000" and BGPR0EN(0) = '1' then
+			CGRAM_FETCH_ADDR <= "0" & BG1_PIX_D(10 downto 8) & BG1_PIX_D(3 downto 0);
 			MATH := CGADSUB(0);
-		elsif SPR_PIX_DATA(3 downto 0) /= "0000" and OBJPR0EN = '1' then
-			CGRAM_FETCH_ADDR <= "1" & SPR_PIX_DATA(6 downto 0);
-			MATH := CGADSUB(4) and SPR_PIX_DATA(6);
-		elsif BG2_PIX_DATA(3 downto 0) /= "0000" and BGPR0EN(1) = '1' then
-			CGRAM_FETCH_ADDR <= "0" & BG2_PIX_DATA(6 downto 4) & BG2_PIX_DATA(3 downto 0);
+		elsif SPR_PIX_D2(3 downto 0) /= "0000" and OBJPR0EN = '1' then
+			CGRAM_FETCH_ADDR <= "1" & SPR_PIX_D2(6 downto 0);
+			MATH := CGADSUB(4) and SPR_PIX_D2(6);
+		elsif BG2_PIX_D(3 downto 0) /= "0000" and BGPR0EN(1) = '1' then
+			CGRAM_FETCH_ADDR <= "0" & BG2_PIX_D(6 downto 4) & BG2_PIX_D(3 downto 0);
 			MATH := CGADSUB(1);
 		else
 			CGRAM_FETCH_ADDR <= (others => '0');
@@ -2197,31 +2225,31 @@ begin
 		end if;
 		
 	elsif BG_MODE_SYNC = "011" then	-- MODE3
-		if SPR_PIX_DATA(3 downto 0) /= "0000" and OBJPR3EN = '1' then
-			CGRAM_FETCH_ADDR <= "1" & SPR_PIX_DATA(6 downto 0);
-			MATH := CGADSUB(4) and SPR_PIX_DATA(6);
-		elsif BG1_PIX_DATA(7 downto 0) /= "00000000" and BGPR1EN(0) = '1' then
-			CGRAM_FETCH_ADDR <= BG1_PIX_DATA(7 downto 0); 
+		if SPR_PIX_D2(3 downto 0) /= "0000" and OBJPR3EN = '1' then
+			CGRAM_FETCH_ADDR <= "1" & SPR_PIX_D2(6 downto 0);
+			MATH := CGADSUB(4) and SPR_PIX_D2(6);
+		elsif BG1_PIX_D(7 downto 0) /= "00000000" and BGPR1EN(0) = '1' then
+			CGRAM_FETCH_ADDR <= BG1_PIX_D(7 downto 0); 
 			DCM := CGWSEL(0);
 			MATH := CGADSUB(0);
-		elsif SPR_PIX_DATA(3 downto 0) /= "0000" and OBJPR2EN = '1' then
-			CGRAM_FETCH_ADDR <= "1" & SPR_PIX_DATA(6 downto 0);
-			MATH := CGADSUB(4) and SPR_PIX_DATA(6);
-		elsif BG2_PIX_DATA(3 downto 0) /= "0000" and BGPR1EN(1) = '1' then
-			CGRAM_FETCH_ADDR <= "0" & BG2_PIX_DATA(6 downto 4) & BG2_PIX_DATA(3 downto 0);
+		elsif SPR_PIX_D2(3 downto 0) /= "0000" and OBJPR2EN = '1' then
+			CGRAM_FETCH_ADDR <= "1" & SPR_PIX_D2(6 downto 0);
+			MATH := CGADSUB(4) and SPR_PIX_D2(6);
+		elsif BG2_PIX_D(3 downto 0) /= "0000" and BGPR1EN(1) = '1' then
+			CGRAM_FETCH_ADDR <= "0" & BG2_PIX_D(6 downto 4) & BG2_PIX_D(3 downto 0);
 			MATH := CGADSUB(1);
-		elsif SPR_PIX_DATA(3 downto 0) /= "0000" and OBJPR1EN = '1' then
-			CGRAM_FETCH_ADDR <= "1" & SPR_PIX_DATA(6 downto 0);
-			MATH := CGADSUB(4) and SPR_PIX_DATA(6);
-		elsif BG1_PIX_DATA(7 downto 0) /= "00000000" and BGPR0EN(0) = '1' then
-			CGRAM_FETCH_ADDR <= BG1_PIX_DATA(7 downto 0);
+		elsif SPR_PIX_D2(3 downto 0) /= "0000" and OBJPR1EN = '1' then
+			CGRAM_FETCH_ADDR <= "1" & SPR_PIX_D2(6 downto 0);
+			MATH := CGADSUB(4) and SPR_PIX_D2(6);
+		elsif BG1_PIX_D(7 downto 0) /= "00000000" and BGPR0EN(0) = '1' then
+			CGRAM_FETCH_ADDR <= BG1_PIX_D(7 downto 0);
 			DCM := CGWSEL(0);
 			MATH := CGADSUB(0);
-		elsif SPR_PIX_DATA(3 downto 0) /= "0000" and OBJPR0EN = '1' then
-			CGRAM_FETCH_ADDR <= "1" & SPR_PIX_DATA(6 downto 0);
-			MATH := CGADSUB(4) and SPR_PIX_DATA(6);
-		elsif BG2_PIX_DATA(3 downto 0) /= "0000" and BGPR0EN(1) = '1' then
-			CGRAM_FETCH_ADDR <= "0" & BG2_PIX_DATA(6 downto 4) & BG2_PIX_DATA(3 downto 0);
+		elsif SPR_PIX_D2(3 downto 0) /= "0000" and OBJPR0EN = '1' then
+			CGRAM_FETCH_ADDR <= "1" & SPR_PIX_D2(6 downto 0);
+			MATH := CGADSUB(4) and SPR_PIX_D2(6);
+		elsif BG2_PIX_D(3 downto 0) /= "0000" and BGPR0EN(1) = '1' then
+			CGRAM_FETCH_ADDR <= "0" & BG2_PIX_D(6 downto 4) & BG2_PIX_D(3 downto 0);
 			MATH := CGADSUB(1);
 		else
 			CGRAM_FETCH_ADDR <= (others => '0');
@@ -2230,31 +2258,31 @@ begin
 		end if;
 		
 	elsif BG_MODE_SYNC = "100" then	-- MODE4
-		if SPR_PIX_DATA(3 downto 0) /= "0000" and OBJPR3EN = '1' then
-			CGRAM_FETCH_ADDR <= "1" & SPR_PIX_DATA(6 downto 0);
-			MATH := CGADSUB(4) and SPR_PIX_DATA(6);
-		elsif BG1_PIX_DATA(7 downto 0) /= "00000000" and BGPR1EN(0) = '1' then
-			CGRAM_FETCH_ADDR <= BG1_PIX_DATA(7 downto 0); 
+		if SPR_PIX_D2(3 downto 0) /= "0000" and OBJPR3EN = '1' then
+			CGRAM_FETCH_ADDR <= "1" & SPR_PIX_D2(6 downto 0);
+			MATH := CGADSUB(4) and SPR_PIX_D2(6);
+		elsif BG1_PIX_D(7 downto 0) /= "00000000" and BGPR1EN(0) = '1' then
+			CGRAM_FETCH_ADDR <= BG1_PIX_D(7 downto 0); 
 			DCM := CGWSEL(0);
 			MATH := CGADSUB(0);
-		elsif SPR_PIX_DATA(3 downto 0) /= "0000" and OBJPR2EN = '1' then
-			CGRAM_FETCH_ADDR <= "1" & SPR_PIX_DATA(6 downto 0);
-			MATH := CGADSUB(4) and SPR_PIX_DATA(6);
-		elsif BG2_PIX_DATA(1 downto 0) /= "00" and BGPR1EN(1) = '1' then
-			CGRAM_FETCH_ADDR <= "000" & BG2_PIX_DATA(6 downto 4) & BG2_PIX_DATA(1 downto 0);
+		elsif SPR_PIX_D2(3 downto 0) /= "0000" and OBJPR2EN = '1' then
+			CGRAM_FETCH_ADDR <= "1" & SPR_PIX_D2(6 downto 0);
+			MATH := CGADSUB(4) and SPR_PIX_D2(6);
+		elsif BG2_PIX_D(1 downto 0) /= "00" and BGPR1EN(1) = '1' then
+			CGRAM_FETCH_ADDR <= "000" & BG2_PIX_D(6 downto 4) & BG2_PIX_D(1 downto 0);
 			MATH := CGADSUB(1);
-		elsif SPR_PIX_DATA(3 downto 0) /= "0000" and OBJPR1EN = '1' then
-			CGRAM_FETCH_ADDR <= "1" & SPR_PIX_DATA(6 downto 0);
-			MATH := CGADSUB(4) and SPR_PIX_DATA(6);
-		elsif BG1_PIX_DATA(7 downto 0) /= "00000000" and BGPR0EN(0) = '1' then
-			CGRAM_FETCH_ADDR <= BG1_PIX_DATA(7 downto 0); 
+		elsif SPR_PIX_D2(3 downto 0) /= "0000" and OBJPR1EN = '1' then
+			CGRAM_FETCH_ADDR <= "1" & SPR_PIX_D2(6 downto 0);
+			MATH := CGADSUB(4) and SPR_PIX_D2(6);
+		elsif BG1_PIX_D(7 downto 0) /= "00000000" and BGPR0EN(0) = '1' then
+			CGRAM_FETCH_ADDR <= BG1_PIX_D(7 downto 0); 
 			DCM := CGWSEL(0);
 			MATH := CGADSUB(0);
-		elsif SPR_PIX_DATA(3 downto 0) /= "0000" and OBJPR0EN = '1' then
-			CGRAM_FETCH_ADDR <= "1" & SPR_PIX_DATA(6 downto 0);
-			MATH := CGADSUB(4) and SPR_PIX_DATA(6);
-		elsif BG2_PIX_DATA(1 downto 0) /= "00" and BGPR0EN(1) = '1' then
-			CGRAM_FETCH_ADDR <= "000" & BG2_PIX_DATA(6 downto 4) & BG2_PIX_DATA(1 downto 0);
+		elsif SPR_PIX_D2(3 downto 0) /= "0000" and OBJPR0EN = '1' then
+			CGRAM_FETCH_ADDR <= "1" & SPR_PIX_D2(6 downto 0);
+			MATH := CGADSUB(4) and SPR_PIX_D2(6);
+		elsif BG2_PIX_D(1 downto 0) /= "00" and BGPR0EN(1) = '1' then
+			CGRAM_FETCH_ADDR <= "000" & BG2_PIX_D(6 downto 4) & BG2_PIX_D(1 downto 0);
 			MATH := CGADSUB(1);
 		else
 			CGRAM_FETCH_ADDR <= (others => '0');
@@ -2263,37 +2291,37 @@ begin
 		end if;
 		
 	elsif BG_MODE_SYNC = "101" then	-- MODE5
-		if SPR_PIX_DATA(3 downto 0) /= "0000" and OBJPR3EN = '1' then
-			CGRAM_FETCH_ADDR <= "1" & SPR_PIX_DATA(6 downto 0);
-			MATH := CGADSUB(4) and SPR_PIX_DATA(6);
-		elsif BG1_PIX_DATA(3 downto 0) /= "0000" and BGPR1EN(0) = '1' and DOT_CLK = '1' then
-			CGRAM_FETCH_ADDR <= "0" & BG1_PIX_DATA(10 downto 8) & BG1_PIX_DATA(3 downto 0);
-		elsif BG1_PIX_DATA(7 downto 4) /= "0000" and BGPR1EN(0) = '1' and DOT_CLK = '0' then
-			CGRAM_FETCH_ADDR <= "0" & BG1_PIX_DATA(10 downto 8) & BG1_PIX_DATA(7 downto 4);
+		if SPR_PIX_D2(3 downto 0) /= "0000" and OBJPR3EN = '1' then
+			CGRAM_FETCH_ADDR <= "1" & SPR_PIX_D2(6 downto 0);
+			MATH := CGADSUB(4) and SPR_PIX_D2(6);
+		elsif BG1_PIX_D(3 downto 0) /= "0000" and BGPR1EN(0) = '1' and DOT_CLK = '1' then
+			CGRAM_FETCH_ADDR <= "0" & BG1_PIX_D(10 downto 8) & BG1_PIX_D(3 downto 0);
+		elsif BG1_PIX_D(7 downto 4) /= "0000" and BGPR1EN(0) = '1' and DOT_CLK = '0' then
+			CGRAM_FETCH_ADDR <= "0" & BG1_PIX_D(10 downto 8) & BG1_PIX_D(7 downto 4);
 			MATH := CGADSUB(0);
-		elsif SPR_PIX_DATA(3 downto 0) /= "0000" and OBJPR2EN = '1' then
-			CGRAM_FETCH_ADDR <= "1" & SPR_PIX_DATA(6 downto 0);
-			MATH := CGADSUB(4) and SPR_PIX_DATA(6);
-		elsif BG2_PIX_DATA(1 downto 0) /= "00" and BGPR1EN(1) = '1' and DOT_CLK = '1' then
-			CGRAM_FETCH_ADDR <= "000" & BG2_PIX_DATA(6 downto 4) & BG2_PIX_DATA(1 downto 0);
-		elsif BG2_PIX_DATA(3 downto 2) /= "00" and BGPR1EN(1) = '1' and DOT_CLK = '0' then
-			CGRAM_FETCH_ADDR <= "000" & BG2_PIX_DATA(6 downto 4) & BG2_PIX_DATA(3 downto 2);
+		elsif SPR_PIX_D2(3 downto 0) /= "0000" and OBJPR2EN = '1' then
+			CGRAM_FETCH_ADDR <= "1" & SPR_PIX_D2(6 downto 0);
+			MATH := CGADSUB(4) and SPR_PIX_D2(6);
+		elsif BG2_PIX_D(1 downto 0) /= "00" and BGPR1EN(1) = '1' and DOT_CLK = '1' then
+			CGRAM_FETCH_ADDR <= "000" & BG2_PIX_D(6 downto 4) & BG2_PIX_D(1 downto 0);
+		elsif BG2_PIX_D(3 downto 2) /= "00" and BGPR1EN(1) = '1' and DOT_CLK = '0' then
+			CGRAM_FETCH_ADDR <= "000" & BG2_PIX_D(6 downto 4) & BG2_PIX_D(3 downto 2);
 			MATH := CGADSUB(1);
-		elsif SPR_PIX_DATA(3 downto 0) /= "0000" and OBJPR1EN = '1' then
-			CGRAM_FETCH_ADDR <= "1" & SPR_PIX_DATA(6 downto 0);
-			MATH := CGADSUB(4) and SPR_PIX_DATA(6);
-		elsif BG1_PIX_DATA(3 downto 0) /= "0000" and BGPR0EN(0) = '1' and DOT_CLK = '1' then
-			CGRAM_FETCH_ADDR <= "0" & BG1_PIX_DATA(10 downto 8) & BG1_PIX_DATA(3 downto 0);
-		elsif BG1_PIX_DATA(7 downto 4) /= "0000" and BGPR0EN(0) = '1' and DOT_CLK = '0' then
-			CGRAM_FETCH_ADDR <= "0" & BG1_PIX_DATA(10 downto 8) & BG1_PIX_DATA(7 downto 4);
+		elsif SPR_PIX_D2(3 downto 0) /= "0000" and OBJPR1EN = '1' then
+			CGRAM_FETCH_ADDR <= "1" & SPR_PIX_D2(6 downto 0);
+			MATH := CGADSUB(4) and SPR_PIX_D2(6);
+		elsif BG1_PIX_D(3 downto 0) /= "0000" and BGPR0EN(0) = '1' and DOT_CLK = '1' then
+			CGRAM_FETCH_ADDR <= "0" & BG1_PIX_D(10 downto 8) & BG1_PIX_D(3 downto 0);
+		elsif BG1_PIX_D(7 downto 4) /= "0000" and BGPR0EN(0) = '1' and DOT_CLK = '0' then
+			CGRAM_FETCH_ADDR <= "0" & BG1_PIX_D(10 downto 8) & BG1_PIX_D(7 downto 4);
 			MATH := CGADSUB(0);
-		elsif SPR_PIX_DATA(3 downto 0) /= "0000" and OBJPR0EN = '1' then
-			CGRAM_FETCH_ADDR <= "1" & SPR_PIX_DATA(6 downto 0);
-			MATH := CGADSUB(4) and SPR_PIX_DATA(6);
-		elsif BG2_PIX_DATA(1 downto 0) /= "00" and BGPR0EN(1) = '1' and DOT_CLK = '1' then
-			CGRAM_FETCH_ADDR <= "000" & BG2_PIX_DATA(6 downto 4) & BG2_PIX_DATA(1 downto 0);
-		elsif BG2_PIX_DATA(3 downto 2) /= "00" and BGPR0EN(1) = '1' and DOT_CLK = '0' then
-			CGRAM_FETCH_ADDR <= "000" & BG2_PIX_DATA(6 downto 4) & BG2_PIX_DATA(3 downto 2);
+		elsif SPR_PIX_D2(3 downto 0) /= "0000" and OBJPR0EN = '1' then
+			CGRAM_FETCH_ADDR <= "1" & SPR_PIX_D2(6 downto 0);
+			MATH := CGADSUB(4) and SPR_PIX_D2(6);
+		elsif BG2_PIX_D(1 downto 0) /= "00" and BGPR0EN(1) = '1' and DOT_CLK = '1' then
+			CGRAM_FETCH_ADDR <= "000" & BG2_PIX_D(6 downto 4) & BG2_PIX_D(1 downto 0);
+		elsif BG2_PIX_D(3 downto 2) /= "00" and BGPR0EN(1) = '1' and DOT_CLK = '0' then
+			CGRAM_FETCH_ADDR <= "000" & BG2_PIX_D(6 downto 4) & BG2_PIX_D(3 downto 2);
 			MATH := CGADSUB(1);
 		else
 			CGRAM_FETCH_ADDR <= (others => '0');
@@ -2302,28 +2330,28 @@ begin
 		end if;
 		
 	elsif BG_MODE_SYNC = "110" then	-- MODE6
-		if SPR_PIX_DATA(3 downto 0) /= "0000" and OBJPR3EN = '1' then
-			CGRAM_FETCH_ADDR <= "1" & SPR_PIX_DATA(6 downto 0);
-			MATH := CGADSUB(4) and SPR_PIX_DATA(6);
-		elsif BG1_PIX_DATA(3 downto 0) /= "0000" and BGPR1EN(0) = '1' and DOT_CLK = '1' then
-			CGRAM_FETCH_ADDR <= "0" & BG1_PIX_DATA(10 downto 8) & BG1_PIX_DATA(3 downto 0);
-		elsif BG1_PIX_DATA(7 downto 4) /= "0000" and BGPR1EN(0) = '1' and DOT_CLK = '0' then
-			CGRAM_FETCH_ADDR <= "0" & BG1_PIX_DATA(10 downto 8) & BG1_PIX_DATA(7 downto 4);
+		if SPR_PIX_D2(3 downto 0) /= "0000" and OBJPR3EN = '1' then
+			CGRAM_FETCH_ADDR <= "1" & SPR_PIX_D2(6 downto 0);
+			MATH := CGADSUB(4) and SPR_PIX_D2(6);
+		elsif BG1_PIX_D(3 downto 0) /= "0000" and BGPR1EN(0) = '1' and DOT_CLK = '1' then
+			CGRAM_FETCH_ADDR <= "0" & BG1_PIX_D(10 downto 8) & BG1_PIX_D(3 downto 0);
+		elsif BG1_PIX_D(7 downto 4) /= "0000" and BGPR1EN(0) = '1' and DOT_CLK = '0' then
+			CGRAM_FETCH_ADDR <= "0" & BG1_PIX_D(10 downto 8) & BG1_PIX_D(7 downto 4);
 			MATH := CGADSUB(0);
-		elsif SPR_PIX_DATA(3 downto 0) /= "0000" and OBJPR2EN = '1' then
-			CGRAM_FETCH_ADDR <= "1" & SPR_PIX_DATA(6 downto 0);
-			MATH := CGADSUB(4) and SPR_PIX_DATA(6);
-		elsif SPR_PIX_DATA(3 downto 0) /= "0000" and OBJPR1EN = '1' then
-			CGRAM_FETCH_ADDR <= "1" & SPR_PIX_DATA(6 downto 0);
-			MATH := CGADSUB(4) and SPR_PIX_DATA(6);
-		elsif BG1_PIX_DATA(3 downto 0) /= "0000" and BGPR0EN(0) = '1' and DOT_CLK = '1' then
-			CGRAM_FETCH_ADDR <= "0" & BG1_PIX_DATA(10 downto 8) & BG1_PIX_DATA(3 downto 0);
-		elsif BG1_PIX_DATA(7 downto 4) /= "0000" and BGPR0EN(0) = '1' and DOT_CLK = '0' then
-			CGRAM_FETCH_ADDR <= "0" & BG1_PIX_DATA(10 downto 8) & BG1_PIX_DATA(7 downto 4);
+		elsif SPR_PIX_D2(3 downto 0) /= "0000" and OBJPR2EN = '1' then
+			CGRAM_FETCH_ADDR <= "1" & SPR_PIX_D2(6 downto 0);
+			MATH := CGADSUB(4) and SPR_PIX_D2(6);
+		elsif SPR_PIX_D2(3 downto 0) /= "0000" and OBJPR1EN = '1' then
+			CGRAM_FETCH_ADDR <= "1" & SPR_PIX_D2(6 downto 0);
+			MATH := CGADSUB(4) and SPR_PIX_D2(6);
+		elsif BG1_PIX_D(3 downto 0) /= "0000" and BGPR0EN(0) = '1' and DOT_CLK = '1' then
+			CGRAM_FETCH_ADDR <= "0" & BG1_PIX_D(10 downto 8) & BG1_PIX_D(3 downto 0);
+		elsif BG1_PIX_D(7 downto 4) /= "0000" and BGPR0EN(0) = '1' and DOT_CLK = '0' then
+			CGRAM_FETCH_ADDR <= "0" & BG1_PIX_D(10 downto 8) & BG1_PIX_D(7 downto 4);
 			MATH := CGADSUB(0);
-		elsif SPR_PIX_DATA(3 downto 0) /= "0000" and OBJPR0EN = '1' then
-			CGRAM_FETCH_ADDR <= "1" & SPR_PIX_DATA(6 downto 0);
-			MATH := CGADSUB(4) and SPR_PIX_DATA(6);
+		elsif SPR_PIX_D2(3 downto 0) /= "0000" and OBJPR0EN = '1' then
+			CGRAM_FETCH_ADDR <= "1" & SPR_PIX_D2(6 downto 0);
+			MATH := CGADSUB(4) and SPR_PIX_D2(6);
 		else
 			CGRAM_FETCH_ADDR <= (others => '0');
 			MATH := CGADSUB(5);
@@ -2331,27 +2359,27 @@ begin
 		end if;
 		
 	else	-- MODE7
-		if SPR_PIX_DATA(3 downto 0) /= "0000" and OBJPR3EN = '1' then
-			CGRAM_FETCH_ADDR <= "1" & SPR_PIX_DATA(6 downto 0);
-			MATH := CGADSUB(4) and SPR_PIX_DATA(6);
-		elsif SPR_PIX_DATA(3 downto 0) /= "0000" and OBJPR2EN = '1' then
-			CGRAM_FETCH_ADDR <= "1" & SPR_PIX_DATA(6 downto 0);
-			MATH := CGADSUB(4) and SPR_PIX_DATA(6);
-		elsif BG2_PIX_DATA(6 downto 0) /= "0000000" and BGPR1EN(1) = '1' and M7EXTBG = '1' then
-			CGRAM_FETCH_ADDR <= "0" & BG2_PIX_DATA(6 downto 0);
+		if SPR_PIX_D2(3 downto 0) /= "0000" and OBJPR3EN = '1' then
+			CGRAM_FETCH_ADDR <= "1" & SPR_PIX_D2(6 downto 0);
+			MATH := CGADSUB(4) and SPR_PIX_D2(6);
+		elsif SPR_PIX_D2(3 downto 0) /= "0000" and OBJPR2EN = '1' then
+			CGRAM_FETCH_ADDR <= "1" & SPR_PIX_D2(6 downto 0);
+			MATH := CGADSUB(4) and SPR_PIX_D2(6);
+		elsif BG2_PIX_D(6 downto 0) /= "0000000" and BGPR1EN(1) = '1' and M7EXTBG = '1' then
+			CGRAM_FETCH_ADDR <= "0" & BG2_PIX_D(6 downto 0);
 			MATH := CGADSUB(1);
-		elsif SPR_PIX_DATA(3 downto 0) /= "0000" and OBJPR1EN = '1' then
-			CGRAM_FETCH_ADDR <= "1" & SPR_PIX_DATA(6 downto 0);
-			MATH := CGADSUB(4) and SPR_PIX_DATA(6);
-		elsif BG1_PIX_DATA(7 downto 0) /= "00000000" and BGPR0EN(0) = '1' then
-			CGRAM_FETCH_ADDR <= BG1_PIX_DATA(7 downto 0);
+		elsif SPR_PIX_D2(3 downto 0) /= "0000" and OBJPR1EN = '1' then
+			CGRAM_FETCH_ADDR <= "1" & SPR_PIX_D2(6 downto 0);
+			MATH := CGADSUB(4) and SPR_PIX_D2(6);
+		elsif BG1_PIX_D(7 downto 0) /= "00000000" and BGPR0EN(0) = '1' then
+			CGRAM_FETCH_ADDR <= BG1_PIX_D(7 downto 0);
 			DCM := CGWSEL(0);
 			MATH := CGADSUB(0);
-		elsif SPR_PIX_DATA(3 downto 0) /= "0000" and OBJPR0EN = '1' then
-			CGRAM_FETCH_ADDR <= "1" & SPR_PIX_DATA(6 downto 0);
-			MATH := CGADSUB(4) and SPR_PIX_DATA(6);
-		elsif BG2_PIX_DATA(6 downto 0) /= "0000000" and BGPR0EN(1) = '1' and M7EXTBG = '1' then
-			CGRAM_FETCH_ADDR <= "0" & BG2_PIX_DATA(6 downto 0);
+		elsif SPR_PIX_D2(3 downto 0) /= "0000" and OBJPR0EN = '1' then
+			CGRAM_FETCH_ADDR <= "1" & SPR_PIX_D2(6 downto 0);
+			MATH := CGADSUB(4) and SPR_PIX_D2(6);
+		elsif BG2_PIX_D(6 downto 0) /= "0000000" and BGPR0EN(1) = '1' and M7EXTBG = '1' then
+			CGRAM_FETCH_ADDR <= "0" & BG2_PIX_D(6 downto 0);
 			MATH := CGADSUB(1);
 		else
 			CGRAM_FETCH_ADDR <= (others => '0');
@@ -2384,23 +2412,23 @@ begin
 			end if;
 
 			if DOT_CLKF_CE = '1' then
-				if WINDOW_X = unsigned(WH0) then
+				if WIN_X_D = unsigned(WH0) then
 					WIN_ACTIVE(0) <= '1';
 				end if;
-				if WINDOW_X = unsigned(WH1) then
+				if WIN_X_D = unsigned(WH1) then
 					WIN_PRE_STOP(0) <= '1';
 				end if;
-				if WINDOW_X = unsigned(WH2) then
+				if WIN_X_D = unsigned(WH2) then
 					WIN_ACTIVE(1) <= '1';
 				end if;
-				if WINDOW_X = unsigned(WH3) then
+				if WIN_X_D = unsigned(WH3) then
 					WIN_PRE_STOP(1) <= '1';
 				end if;
 
 				WIN_STOP <= WIN_PRE_STOP;
 			end if;
 
-			if H_CNT = BG_GET_PIX_START then
+			if H_CNT = BG_GET_PIX_START+PIPE_DLY then
 				WIN_ACTIVE <= (others => '0');
 				WIN_PRE_STOP <= (others => '0');
 				WIN_STOP <= (others => '0');
@@ -2429,7 +2457,7 @@ begin
 
 				if DOT_CLKF_CE = '1' or DOT_CLKR_CE = '1' then
 					if DCM = '1' then
-						COLOR := GetDCM(BG1_PIX_DATA(10 downto 0));
+						COLOR := GetDCM(BG1_PIX_D(10 downto 0));
 					else
 						COLOR := CGRAM_Q;
 					end if;
@@ -2498,7 +2526,7 @@ begin
 			end if;
 			
 			if BG_MATH = '1' then
-				MATH_X <= WINDOW_X;
+				MATH_X <= WIN_X_D;
 			end if;
 		end if;
 	end if;
