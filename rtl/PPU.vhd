@@ -178,7 +178,9 @@ signal BG_MODE_SYNC		: std_logic_vector(2 downto 0);
 signal BG_MODE_TILE_SYNC		: std_logic_vector(2 downto 0);
 signal SPR_GET_PIXEL 	: std_logic;
 signal BG_GET_PIXEL 		: std_logic;
-constant PIPE_DLY			: integer := 3;
+constant PIPE_DLY			: integer := 2;
+constant FETCH_DLY			: integer := 1;
+signal H_BG					: unsigned(8 downto 0);
 type PixPipe_t is array(1 to PIPE_DLY) of std_logic_vector(48 downto 0);
 signal PIX_PIPE			: PixPipe_t;
 signal BG1_PIX_D			: std_logic_vector(11 downto 0);
@@ -887,8 +889,8 @@ begin
 				FIRST_VBLANK_LINE <= '0';
 			end if;
 			
-			if H_CNT = 20-1+PIPE_DLY  then HDE <= '1'; end if;
-			if H_CNT = 276-1+PIPE_DLY then HDE <= '0'; end if;
+			if H_CNT = 20-1+FETCH_DLY+PIPE_DLY  then HDE <= '1'; end if;
+			if H_CNT = 276-1+FETCH_DLY+PIPE_DLY then HDE <= '0'; end if;
 
 			if H_CNT = HSYNC_START then HSYNC <= '1'; end if;
 			if H_CNT = HSYNC_START+23 then HSYNC <= '0'; end if;
@@ -910,39 +912,41 @@ VBLANK_LINE <= FIRST_VBLANK_LINE and not FORCE_BLANK;
 HVCNT_ATZERO <= '1' when ENABLE = '1' and DOT_CLKR_CE = '1' and FIELD = '1' and
                         H_CNT >= LAST_DOT and V_CNT >= LAST_LINE else '0';
 
-process( H_CNT, V_CNT, LAST_VIS_LINE )
+H_BG <= H_CNT - FETCH_DLY;
+
+process( H_CNT, H_BG, V_CNT, LAST_VIS_LINE )
 begin
-	if H_CNT <= BG_FETCH_END then
+	if H_BG <= BG_FETCH_END and H_CNT <= BG_FETCH_END then
 		BG_FETCH <= '1';
 	else
 		BG_FETCH <= '0';
 	end if;
 	
-	if H_CNT >= M7_FETCH_START and H_CNT <= M7_FETCH_END and V_CNT >= 0 and V_CNT <= LAST_VIS_LINE then
+	if H_BG >= M7_FETCH_START and H_BG <= M7_FETCH_END and V_CNT >= 0 and V_CNT <= LAST_VIS_LINE then
 		M7_FETCH <= '1';
 	else
 		M7_FETCH <= '0';
 	end if;
 
-	if H_CNT >= SPR_GET_PIX_START and H_CNT <= SPR_GET_PIX_END and V_CNT >= 1 and V_CNT <= LAST_VIS_LINE then
+	if H_BG >= SPR_GET_PIX_START and H_BG <= SPR_GET_PIX_END and V_CNT >= 1 and V_CNT <= LAST_VIS_LINE then
 		SPR_GET_PIXEL <= '1';
 	else
 		SPR_GET_PIXEL <= '0';
 	end if;
 	
-	if H_CNT >= BG_GET_PIX_START and H_CNT <= BG_GET_PIX_END and V_CNT >= 1 and V_CNT <= LAST_VIS_LINE then
+	if H_BG >= BG_GET_PIX_START and H_BG <= BG_GET_PIX_END and V_CNT >= 1 and V_CNT <= LAST_VIS_LINE then
 		BG_GET_PIXEL <= '1';
 	else
 		BG_GET_PIXEL <= '0';
 	end if;
 	
-	if H_CNT >= BG_MATH_START+PIPE_DLY and H_CNT <= BG_MATH_END+PIPE_DLY and V_CNT >= 1 and V_CNT <= LAST_VIS_LINE then
+	if H_BG >= BG_MATH_START+PIPE_DLY and H_BG <= BG_MATH_END+PIPE_DLY and V_CNT >= 1 and V_CNT <= LAST_VIS_LINE then
 		BG_MATH <= '1';
 	else
 		BG_MATH <= '0';
 	end if;
 	
-	if H_CNT >= BG_OUT_START+PIPE_DLY and H_CNT <= BG_OUT_END+PIPE_DLY and V_CNT >= 1 and V_CNT <= LAST_VIS_LINE then
+	if H_BG >= BG_OUT_START+PIPE_DLY and H_BG <= BG_OUT_END+PIPE_DLY and V_CNT >= 1 and V_CNT <= LAST_VIS_LINE then
 		BG_OUT <= '1';
 	else
 		BG_OUT <= '0';
@@ -975,7 +979,7 @@ begin
 	elsif rising_edge(CLK) then
 		if ENABLE = '1' and DOT_CLKR_CE = '1' then
 			BG_MODE_SYNC <= BG_MODE;
-			if H_CNT(2 downto 0) = 7 then
+			if H_BG(2 downto 0) = 7 then
 				BG_MODE_TILE_SYNC <= BG_MODE;
 			end if;
 		end if;
@@ -985,7 +989,7 @@ end process;
 --Background engine
 HIRES <= '1' when BG_MODE_SYNC = "101" or BG_MODE_SYNC = "110" else '0';
 
-BF <= BF_TBL(to_integer(unsigned(BG_MODE_TILE_SYNC)), to_integer(H_CNT(2 downto 0)));
+BF <= BF_TBL(to_integer(unsigned(BG_MODE_TILE_SYNC)), to_integer(H_BG(2 downto 0)));
 
 process( RST_N, CLK, BF, BG_MODE_SYNC, BG_SIZE, BG_SC_ADDR, BG_SC_SIZE, BG_NBA, BG_HOFS, BG_VOFS, H_CNT, V_CNT, IN_VBL, BG_FORCE_BLANK, FORCE_BLANK_SR,
 			BG_DATA, BG_TILE_INFO, BG3_OPT_DATA0, BG3_OPT_DATA1, BG_MOSAIC_Y ,BG_MOSAIC_EN, FIELD, HIRES, BGINTERLACE, VRAM_DAI, DOT_CLK, MPY,
@@ -1037,7 +1041,7 @@ begin
 			BG_TILE_INFO(3) <= (others => '0');
 	end case;
 	
-	SCREEN_X := H_CNT;
+	SCREEN_X := H_BG;
 	SCREEN_Y := V_CNT(7 downto 0);
 
 	if BG_MOSAIC_EN(BF.BG) = '0' then
@@ -1289,7 +1293,7 @@ begin
 					M7_SCREEN_X <= (others => '0');
 				end if;
 
-				if H_CNT = M7_XY_LATCH then
+				if H_BG = M7_XY_LATCH then
 					M7_TEMP_X <= (resize(signed(M7X), M7_TEMP_X'length) sll 8);
 					M7_TEMP_Y <= (resize(signed(M7Y), M7_TEMP_Y'length) sll 8);
 
@@ -1358,10 +1362,10 @@ begin
 
 			if BG_FETCH = '1' then
 				if BG_MODE /= "111" then
-					BG_DATA(to_integer(H_CNT(2 downto 0))) <= VRAM_DBI & VRAM_DAI;
+					BG_DATA(to_integer(H_BG(2 downto 0))) <= VRAM_DBI & VRAM_DAI;
 				end if;
 				
-				if H_CNT(2 downto 0) = 0 then
+				if H_BG(2 downto 0) = 0 then
 					case BG_MODE_SYNC is
 						when "000" =>
 							BG_TILES(0).PLANES( 0) <= FlipPlane(BG_DATA(7)( 7 downto 0), BG_TILE_INFO(BG1)(14));
@@ -1466,7 +1470,7 @@ begin
 					end if;
 				end if;
 				
-				if H_CNT(2 downto 0) = 7 then
+				if H_BG(2 downto 0) = 7 then
 					BG3_OPT_DATA0 <= BG_DATA(2);
 					BG3_OPT_DATA1 <= BG_DATA(3);
 				end if;
@@ -2433,7 +2437,7 @@ begin
 				WIN_STOP <= WIN_PRE_STOP;
 			end if;
 
-			if H_CNT = BG_GET_PIX_START+PIPE_DLY then
+			if H_BG = BG_GET_PIX_START+PIPE_DLY then
 				WIN_ACTIVE <= (others => '0');
 				WIN_PRE_STOP <= (others => '0');
 				WIN_STOP <= (others => '0');
