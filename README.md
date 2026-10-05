@@ -20,6 +20,41 @@ All builds use Quartus 17.0.2 with the `.qsf`'s seed. All recordings come from a
 [tasty](https://github.com/mcfbytes/Tasty_MiSTer), which replays a movie from power-on and records every frame the
 core outputs, before the scaler. Each run is deterministic: the same movie on the same core gives the same frames.
 
+## Index: A/B packs
+
+One directory per test under [`ab/`](ab/README.md): the ROM or its link and sha256, the tasty movie, a labelled side-by-side
+(upstream | PR | bsnes | MesenCE | hardware), the MiSTer recordings as MP4, and tasty's per-frame hash logs. Prebuilt cores
+and raw AVIs: pre-release [`evidence-460-cores`](https://github.com/mcfbytes/SNES_MiSTer/releases/tag/evidence-460-cores).
+Every MiSTer recording passed a quality gate (no missed, torn, dropped or late frame; `ab/README.md`). "—" = no capture.
+
+**PR A** (H/V IRQ +6 master clocks, `2ff03cf`)
+
+| test | what to look at | upstream | PR A | bsnes | MesenCE | hardware |
+|---|---|---|---|---|---|---|
+| [test_irqb_verbose](ab/A/test_irqb_verbose/) | checks against the ROM's built-in expected values (byuu) | 8 of 32 wrong | 32/32 | 32/32 (2014) | 32/32 | — |
+| [irqprobe](ab/A/irqprobe/) | IRQ wake/entry H, 16 rounds | NTSC 0/18 rows equal bsnes; PAL 4/18 in band | 9/18 equal, 6 more within 1 dot; PAL 17/18 | reference | 18/18 | — |
+| [busprobe](ab/A/busprobe/) | bus access and IRQ entry H | NTSC 0/23; PAL 7/23 | 20/23; PAL 22/23 | reference | 23/23 | — |
+| [mode7_hirq](ab/A/mode7_hirq/) (#274, #275) | H-IRQ value where the M7VOFS line flickers | matches 6 of 7 hardware thresholds; `$FFFF` no IRQ | **every threshold about 1 H step earlier, 0 of 7**; `$FFFF` no IRQ | not a reference (differs from hardware) | not a reference (line at every H) | paulb-nl, 1-chip (#274) |
+| [games](ab/A/games/) | attract modes, 9,000 frames | | Kawasaki, WeaponLord, Aladdin identical; Chuck Rock, Cybernator and the Full Throttle water race differ by 1-4 dots on one line; Full Throttle's attract picks another track later | | | — |
+
+**PR B** (PPU fetch/output/force-blank timing, `18f47d6` = A + B; +IRQ alone as context)
+
+| test | what to look at | upstream | PR A+B | +IRQ only | bsnes v115 | MesenCE | hardware |
+|---|---|---|---|---|---|---|---|
+| [bg_fb](ab/B/bg_fb/) | bar end, red N, at start / R1 / R2 | N: no / 2 of 3 / yes | no / no / 2 of 3 | 1-2 of 3 / 2-3 of 3 / no | no N at any point | no N at any point | no / no / yes (paulb-nl, #430/#460) |
+| [contra_test_fb](ab/B/contra_test_fb/) | last line: tile at x 52-60, start / R1 | 1-2 of 3 / yes | **no / yes** | 3 of 3 / yes | — (224 lines) and no tile | no tile at any point | no / yes (paulb-nl, #460) |
+| [bg_dense](ab/B/bg_dense/) | bar-end x where the N shows | 160-161, 168-169 | **159-160, 167-168** | 160-161, 168-169 | no N | no N | 151-152, 159-160, 167-168 (paulb-nl video) |
+| [hblankemu](ab/B/hblankemu/) | lines 2-3 | garbled in 2 of 4 states | **"Beha UR / -Emu" every frame** | worse | no sprites | every sprite | "Beha UR / -Emu" (paulb_nl) |
+| sweep screens: [hvdma_max, INIDISP](#3-regression-sweep-b-against-a) | hvdma_max / brightness step dot / first lit dot | striped / 76-77 / 41 | clean / 74-75 / 39 | 1,792 px / 77-78 / 43 | clean / none / whole line | clean / 76-77 / 41 | — |
+| [mode7_hirq](ab/A/mode7_hirq/) | as PR A | | frame-identical to PR A | | | | |
+
+**PR C** (`$2137` latches only while `$4201` bit 7 is set, `57160ab`)
+
+| test | what to look at | upstream | PR C | bsnes 2014 | MesenCE | hardware |
+|---|---|---|---|---|---|---|
+| [slhv-wrio](ab/C/slhv-wrio/) (ours, NTSC and PAL) | 6 cases, latched V | 3 of 6 PASS (cases 2, 3, 6 latch at the read) | 6/6 | 6/6 | 6/6 | — (photo wanted) |
+| [probe rows](ab/C/probe-rows/) | irqprobe `2137 WR7F`, busprobe `IRQ 4203L` | the read overwrites the latch (040, 04A) | the earlier latch survives (097-098, 036) | 09A, 037-038 | 09A, 037-038 | — |
+
 ## 1. #460 force-blank tests (PR B), against paulb-nl's hardware captures
 
 paulb-nl's test ROMs and hardware captures: `bg_fb.smc` ([#430](https://github.com/MiSTer-devel/SNES_MiSTer/issues/430),
@@ -112,7 +147,7 @@ mid-line, so it may be related to the same timing; it needs hardware statistics 
 
 ## 6. H/V IRQ timing (PR A) and the `$2137` gate (PR C)
 
-- `irq/irqb-verbose-{before,after}.png`: byuu's `test_irqb` (expected values from a real SNES), rebuilt with a verbose
+- `irq/irqb-verbose-{before,after}.png`: byuu's `test_irqb` (checked against the ROM's built-in expected values), rebuilt with a verbose
   results screen (`probes/test_irqb_verbose/`: `gen.py` + `patch.asm` applied to the original `test_irqb.smc`; the
   measurement code is unchanged). Upstream: 8 of 32 checks wrong (sub-tests 4 and 5, 3-4 dots early). With A: 32/32.
 - `irq/{busprobe,irqprobe}-{before,after}.png` and `pal-*`: two probe ROMs written for this (`probes/`, source and
@@ -132,6 +167,16 @@ mid-line, so it may be related to the same timing; it needs hardware statistics 
 - **Known open item:** `hdmaen_latch_test_2` red lines (8 channels x 13 HTIMEs) are 35 upstream, about 15-17 with A
   (and the same with B), against 52 on bsnes 2014 accuracy and 28-32 on MesenCE (it varies between runs). The two emulators disagree, and we have no hardware
   count. The early IRQ was partly masking a separate HDMAEN latch question.
+- **`slhv-wrio` (PR C), a test ROM written for it** (`ab/C/slhv-wrio/`: source, build script, NTSC and PAL ROMs, MGLs,
+  movies). No input; six cases, each priming a latch at line 40 and then acting at line 120, judged on the latched V
+  against bsnes 2014 accuracy (MesenCE agrees on every V). Upstream passes 3 of 6: a `$2137` read with `$4201` bit 7 clear
+  latches (case 2), even after bit 7 was set and cleared earlier (case 3, fullsnes's "or was set"), and three reads in a row
+  latch each time (case 6). PR C passes 6 of 6, NTSC and PAL. Both cores latch on the 1→0 write itself (case 4, the
+  EXTLATCH falling edge; `JOY2_P6_in` is 1 with no gun or SNAC) and not on 0→1 (case 5), as both emulators do.
+  No real-console result yet.
+- **A hardware reference PR A does not match: paulb-nl's mode 7 H-IRQ tests (#274)** (`ab/A/mode7_hirq/`). Upstream
+  reproduces the 1-chip console's flicker thresholds on six of seven variants; PR A moves each about one H step earlier
+  and matches none. A+B is frame-identical to A there. `test_irqb` (fixed by A) and these tests pull in opposite directions.
 
 ## 7. Timing closure (MiSTer Seedy, 30 seeds per side, Quartus 17.0.2)
 
