@@ -14,7 +14,7 @@ The cores in every comparison:
 |---|---|
 | upstream | `2302683` (master) |
 | +IRQ | `2ff03cf` (A) |
-| +IRQ+PPU | `0148bb7`, the same tree as `18f47d6` (A + B). Some recordings (marked **f2**) come from an earlier build of B, without B's Mode 7 fix. These test ROMs do not use Mode 7, and f2 and B's final build are frame-identical on every non-Mode 7 recording we have (Voronoi 3,600 frames, TwistIT 14,400, HblankEmuTest 900). |
+| +IRQ+PPU | `0148bb7`, the same tree as `18f47d6` (A + B). One comparison (SMAS, section 4) uses **f2**, an earlier build of B without its Mode 7 fix. f2 and the final build are frame-identical on every non-Mode 7 recording in both: the four #460 movies, Voronoi, TwistIT and HblankEmuTest. |
 
 All builds use Quartus 17.0.2 with the `.qsf`'s seed. All recordings come from a DE10-Nano running the core, captured with
 [tasty](https://github.com/mcfbytes/Tasty_MiSTer), which replays a movie from power-on and records every frame the
@@ -36,7 +36,7 @@ hardware video there) and `contra_test_fb.smc`
   measurement run on paulb-nl's hardware video (`tools/feat.py`).
 - `460/*.mp4`: the three cores stacked (upstream, +IRQ, +IRQ+PPU), the whole movie, 2x.
 
-| observable | hardware | upstream | +IRQ | +IRQ+PPU (f2) |
+| observable | hardware | upstream | +IRQ | +IRQ+PPU |
 |---|---|---|---|---|
 | bg_fb, start: red N | absent | absent | in 1 of 3 phases | absent |
 | bg_fb, after 1 R: red N | absent | in 2 of 3 phases | in 2 of 3 | absent |
@@ -96,13 +96,14 @@ of these two ROMs.
 `games/game-ab.tsv`: per-frame hashes of whole movies, +IRQ against +IRQ+PPU (`tools/hashcmp.py`; tasty's encoder
 duplicates are excluded).
 
-- Identical: Voronoi split-screen demo (3,600), Super Mario Kart attract (10,800) and F-Zero attract (10,800, both Mode 7),
-  Super Punch-Out!! TAS (57,224, on f2).
+- Identical: Contra III TAS (45,442 frames valid in both runs, Mode 7 stages included), Super Punch-Out!! TAS (57,224),
+  Super Mario Kart attract (10,800) and F-Zero attract (10,800, both Mode 7), Voronoi split-screen demo (3,600). Both
+  TAS runs finished on both cores with every input applied on time.
 - TwistIT: 2 of 14,400 frames differ by a few pixels on one scanline.
-- SMAS (Super Mario Bros.) TAS, on f2: 19 of 18,235 frames differ, all by 1-2 px at the left end of line 31, the status-bar IRQ split
+- SMAS (Super Mario Bros.) TAS, on f2 (the pr2 run got one late input from the replay side and left the movie): 19 of 18,235 frames differ, all by 1-2 px at the left end of line 31, the status-bar IRQ split
   (`games/smas-line31-zoom.png`). Every movie stays in sync to the end.
 - f2 (before the Mode 7 fix) differed on the last 2 pixels of every Mode 7 line; the final commit's Mode 7 output is
-  identical to +IRQ on both Mode 7 attract modes.
+  identical to +IRQ on both Mode 7 attract modes and on Contra III.
 
 ## 5. Contra (SNES) MSU-1 poster menu, the game in #460: unchanged, needs hardware statistics
 
@@ -147,9 +148,9 @@ x 96-167: hardware video (1 sample), Mesen, upstream, +IRQ, +IRQ+PPU. `06-gap-fr
 
 | PR | run | result |
 |---|---|---|
-| A | ⟪PENDING: tonight's run, `irq-timing` 2ff03cf vs 2302683⟫ | the same patch on c61bfd4: [run 37205363393](https://github.com/mcfbytes/SNES_MiSTer/actions/runs/37205363393), `seedy/A-earlier-*.md`. "Possible regression": 3/30 seeds meet timing against 12/30; `emu c2` setup fails more often, on master's own `sdram|rbuf → P65C816|P` path |
+| A | `irq-timing` 2ff03cf vs 2302683: queued; the report will follow as a comment on the PR | the same patch on c61bfd4: [run 37205363393](https://github.com/mcfbytes/SNES_MiSTer/actions/runs/37205363393), `seedy/A-earlier-*.md`. "Possible regression": 3/30 seeds meet timing against 12/30; `emu c2` setup fails more often, on master's own `sdram|rbuf → P65C816|P` path |
 | A+B | [run 37264587249](https://github.com/mcfbytes/SNES_MiSTer/actions/runs/37264587249), `seedy/B-ppu-460-0148bb7-vs-2302683.md` | 9/30 seeds meet timing against 8/30 (p 1.00). Hold flag: 6/30 seeds against 1/30, all on existing `msu_data_store`/`savestates` → `ddram` cache-address crossings, no PPU paths: `seedy/B-hold-analysis.md` |
-| C | ⟪PENDING: tonight's run, `slhv-wrio-gate` 57160ab vs 2302683⟫ | the same patch on c61bfd4: [run 37214664117](https://github.com/mcfbytes/SNES_MiSTer/actions/runs/37214664117), "no measurable regression" (8/30 against 12/30, p 0.41) |
+| C | `slhv-wrio-gate` 57160ab vs 2302683: queued; the report will follow as a comment on the PR | the same patch on c61bfd4: [run 37214664117](https://github.com/mcfbytes/SNES_MiSTer/actions/runs/37214664117), "no measurable regression" (8/30 against 12/30, p 0.41) |
 
 ## 8. Reproducing a recording
 
@@ -164,11 +165,11 @@ video. `tools/hashcmp.py a.tsv b.tsv` compares two runs by movie frame. `tools/v
 sheets and MP4s here, for example:
 
 ```sh
-X0=200 CW=200 VS=8 tools/vsheet.sh <recdir> bg_fb 4 20 bg_fb-states.png "upstream=m0,+IRQ=m1,+IRQ+PPU=f2" \
+X0=200 CW=200 VS=8 tools/vsheet.sh <recdir> bg_fb 4 20 bg_fb-states.png "upstream=m0,+IRQ=m1,+IRQ+PPU=pr2" \
   "start:10:300" "after R x1:305:420" "after R x2:425:540"
-X0=0 CW=160 VS=24 tools/vsheet.sh <recdir> contra_last 236 3 contra_last-states.png "upstream=m0,+IRQ=m1,+IRQ+PPU=f2" \
+X0=0 CW=160 VS=24 tools/vsheet.sh <recdir> contra_last 236 3 contra_last-states.png "upstream=m0,+IRQ=m1,+IRQ+PPU=pr2" \
   "start:540:650" "after R x1:655:770" "after R x2:775:890"
-sh tools/sbs.sh <recdir> bg_fb 0 bg_fb.mp4 m0:upstream m1:+IRQ f2:+IRQ+PPU
+sh tools/sbs.sh <recdir> bg_fb 0 bg_fb.mp4 m0:upstream m1:+IRQ pr2:+IRQ+PPU
 ```
 
 Here `<recdir>/<tag>-<movie>/` is a tasty `--record` directory.

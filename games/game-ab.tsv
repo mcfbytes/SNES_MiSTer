@@ -3,8 +3,8 @@ Voronoi split-screen demo	voronoi.lsmv	3600	identical	identical	-	HDMA window sp
 Resistance TwistIT	twistit.lsmv	14398	2 frames (4214, 6706)	2 frames (same)	a few pixels on one scanline each (line ~26 x 48-51, line ~24 x 160-163)	+IRQ, IRQ-only (c61bfd4) and control runs agree with each other; pr2 == f2
 Super Mario Kart attract	smk-attract.lsmv	10800	identical	4879 frames	f2: last 2 px of Mode 7 lines	Mode 7; f2's edge bug is what the Mode 7 commit fixes
 F-Zero attract	fzero-attract.lsmv	10800	identical	10622 frames	f2: last 2 px of Mode 7 lines	Mode 7
-SMAS Super Mario Bros. (TASVideos 6744M)	smas-6744M.bk2	18235	not comparable (pr2 run: one late input at frame 672, desynced)	19 frames (17170-17687)	1-2 px at the left end of line 31 (status-bar IRQ split)	f2 == pr2 outside Mode 7; play with --lead -1
-Contra III (TASVideos 4363M)	contra3-4363M.bk2	45493	owed (pr2 hash log not yet copied off the card)	4301 frames	all 240 full-resolution comparable frames: right edge only (x >= 254, f2 Mode 7 bug); the rest recorded at half scale	-
-Super Punch-Out!! (TASVideos 4933M)	spo-4933M.bk2	57224	owed (pr2 hash log not yet copied off the card)	identical	-	-
+SMAS Super Mario Bros. (TASVideos 6744M)	smas-6744M.bk2	18235	not comparable: the pr2 run got one late input at frame 672 (replay side, not the core) and left the movie; the f2 column stands in (f2 == pr2 outside Mode 7)	19 frames (17170-17687)	1-2 px at the left end of line 31 (status-bar IRQ split)	f2 == pr2 outside Mode 7; play with --lead -1
+Contra III (TASVideos 4363M)	contra3-4363M.bk2	45442	identical	4301 frames	-	both runs finished (45,495 inputs applied, 0 late); frames valid in both (pr2: 50 encoder duplicates + 1 missed excluded; m1: 4); f2 differed only by the Mode 7 right-edge bug the final commit fixes
+Super Punch-Out!! (TASVideos 4933M)	spo-4933M.bk2	57224	identical	identical	-	both runs finished (57,173 inputs applied, 0 late)
 HblankEmuTest (Motive)	hblankemu.lsmv	900	890 frames	890 frames	intended: matches hardware (see hblankemu/)	pr2 == f2
 Contra (SNES) MSU-1 poster menu	contra_msu.lsmv	5654 valid on all	identical except the arrow blink phase and gap rows 217/237	-	see contra-msu/	not fixed by B; unchanged class
