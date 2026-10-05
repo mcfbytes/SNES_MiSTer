@@ -208,6 +208,9 @@ signal BG3_PIX_GET 		: std_logic_vector(5 downto 0);
 signal BG4_PIX_DATA 		: std_logic_vector(5 downto 0);
 signal BG4_PIX_GET 		: std_logic_vector(5 downto 0);
 signal M7_PIX_DATA 		: std_logic_vector(7 downto 0);
+type M7PixPipe_t is array(0 to FETCH_DLY) of std_logic_vector(7 downto 0);
+signal M7_PIX_PIPE		: M7PixPipe_t;
+signal M7_GET_PIXEL		: std_logic;
 
 signal MPY					: signed(26 downto 0);
 signal M7_SCREEN_X  		: unsigned(7 downto 0);
@@ -914,6 +917,7 @@ HVCNT_ATZERO <= '1' when ENABLE = '1' and DOT_CLKR_CE = '1' and FIELD = '1' and
 
 -- The BG fetch and pixel get stages run FETCH_DLY dots behind H_CNT.
 H_BG <= H_CNT - FETCH_DLY;
+M7_PIX_DATA <= M7_PIX_PIPE(FETCH_DLY);
 
 process( H_CNT, H_BG, V_CNT, LAST_VIS_LINE )
 begin
@@ -923,7 +927,7 @@ begin
 		BG_FETCH <= '0';
 	end if;
 	
-	if H_BG >= M7_FETCH_START and H_BG <= M7_FETCH_END and V_CNT >= 0 and V_CNT <= LAST_VIS_LINE then
+	if H_CNT >= M7_FETCH_START and H_CNT <= M7_FETCH_END and V_CNT >= 0 and V_CNT <= LAST_VIS_LINE then
 		M7_FETCH <= '1';
 	else
 		M7_FETCH <= '0';
@@ -933,6 +937,12 @@ begin
 		SPR_GET_PIXEL <= '1';
 	else
 		SPR_GET_PIXEL <= '0';
+	end if;
+
+	if H_CNT >= SPR_GET_PIX_START and H_CNT <= SPR_GET_PIX_END and V_CNT >= 1 and V_CNT <= LAST_VIS_LINE then
+		M7_GET_PIXEL <= '1';
+	else
+		M7_GET_PIXEL <= '0';
 	end if;
 	
 	if H_BG >= BG_GET_PIX_START and H_BG <= BG_GET_PIX_END and V_CNT >= 1 and V_CNT <= LAST_VIS_LINE then
@@ -1294,7 +1304,7 @@ begin
 					M7_SCREEN_X <= (others => '0');
 				end if;
 
-				if H_BG = M7_XY_LATCH then
+				if H_CNT = M7_XY_LATCH then
 					M7_TEMP_X <= (resize(signed(M7X), M7_TEMP_X'length) sll 8);
 					M7_TEMP_Y <= (resize(signed(M7Y), M7_TEMP_Y'length) sll 8);
 
@@ -1899,15 +1909,20 @@ begin
 
 			if SPR_GET_PIXEL = '1' then
 				SPR_PIX_DATA_BUF <= SPR_PIX_Q;
-				
-				if M7SEL(7 downto 6) = "10" and M7_TILE_OUTSIDE = '1' then 
-					M7_PIX_DATA <= (others => '0');
-				else
-					M7_PIX_DATA <= VRAM_DBI;
-				end if;
-			
 				SPR_PIXEL_X <= SPR_PIXEL_X + 1;
 			end if;
+
+			-- Mode 7 keeps the unshifted fetch; its pixel is delayed FETCH_DLY dots to meet the get stage.
+			if M7_GET_PIXEL = '1' then
+				if M7SEL(7 downto 6) = "10" and M7_TILE_OUTSIDE = '1' then 
+					M7_PIX_PIPE(0) <= (others => '0');
+				else
+					M7_PIX_PIPE(0) <= VRAM_DBI;
+				end if;
+			end if;
+			for i in 1 to FETCH_DLY loop
+				M7_PIX_PIPE(i) <= M7_PIX_PIPE(i-1);
+			end loop;
 		end if;
 	end if;
 end process;
