@@ -1,0 +1,16 @@
+{
+ "project": "SNES",
+ "revision": "SNES",
+ "baseline": {
+  "label": "upstream-master-2302683",
+  "sha": "23026830ff8108fda0f32c0616296845f586b8ce",
+  "short": "2302683"
+ },
+ "image": "theypsilon/quartus-lite-c5:17.0.2@sha256:42e6c06da3af486f9cfea74acb5c1af9b63a77d0f16e3bf093215216e209b7ad",
+ "seeds": "1-30",
+ "threads": 0,
+ "build_epoch": 1791124191,
+ "quartus_version": "17.0.2 Build 602 07/19/2017 SJ Lite Edition",
+ "run_url": "https://github.com/mcfbytes/SNES_MiSTer/actions/runs/37264587249",
+ "cache_key": "16f12ffefe6fc800cc8747407fc421b9"
+}
