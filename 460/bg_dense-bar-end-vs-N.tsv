@@ -1,0 +1,67 @@
+core	bar_end_x	frames	frames_showing_N
+upstream	157	94	0
+upstream	158	203	0
+upstream	159	15	0
+upstream	160	65	65
+upstream	161	59	59
+upstream	162	67	0
+upstream	163	54	0
+upstream	164	59	0
+upstream	165	60	0
+upstream	166	60	0
+upstream	167	65	0
+upstream	168	56	56
+upstream	169	59	59
+upstream	170	17	0
++IRQ	159	189	0
++IRQ	160	108	108
++IRQ	161	39	39
++IRQ	162	62	0
++IRQ	163	61	0
++IRQ	164	58	0
++IRQ	165	56	0
++IRQ	166	60	0
++IRQ	167	73	0
++IRQ	168	53	53
++IRQ	169	56	56
++IRQ	170	42	0
++IRQ+PPU	155	94	0
++IRQ+PPU	156	203	0
++IRQ+PPU	157	15	0
++IRQ+PPU	158	65	0
++IRQ+PPU	159	59	59
++IRQ+PPU	160	67	67
++IRQ+PPU	161	54	0
++IRQ+PPU	162	59	0
++IRQ+PPU	163	60	0
++IRQ+PPU	164	60	0
++IRQ+PPU	165	65	0
++IRQ+PPU	166	56	0
++IRQ+PPU	167	59	59
++IRQ+PPU	168	58	58
++IRQ+PPU	169	64	0
++IRQ+PPU	170	19	0
+hardware (paulb-nl video, frames 0-560)	146	18	0
+hardware (paulb-nl video, frames 0-560)	147	43	0
+hardware (paulb-nl video, frames 0-560)	148	15	0
+hardware (paulb-nl video, frames 0-560)	149	32	0
+hardware (paulb-nl video, frames 0-560)	150	27	0
+hardware (paulb-nl video, frames 0-560)	151	37	37
+hardware (paulb-nl video, frames 0-560)	152	34	34
+hardware (paulb-nl video, frames 0-560)	153	30	0
+hardware (paulb-nl video, frames 0-560)	154	30	0
+hardware (paulb-nl video, frames 0-560)	155	23	0
+hardware (paulb-nl video, frames 0-560)	156	20	0
+hardware (paulb-nl video, frames 0-560)	157	23	0
+hardware (paulb-nl video, frames 0-560)	158	16	0
+hardware (paulb-nl video, frames 0-560)	159	30	30
+hardware (paulb-nl video, frames 0-560)	160	17	17
+hardware (paulb-nl video, frames 0-560)	161	17	0
+hardware (paulb-nl video, frames 0-560)	162	25	0
+hardware (paulb-nl video, frames 0-560)	163	14	0
+hardware (paulb-nl video, frames 0-560)	164	21	0
+hardware (paulb-nl video, frames 0-560)	165	25	0
+hardware (paulb-nl video, frames 0-560)	166	21	0
+hardware (paulb-nl video, frames 0-560)	167	13	13
+hardware (paulb-nl video, frames 0-560)	168	14	14
+hardware (paulb-nl video, frames 0-560)	169	3	0
