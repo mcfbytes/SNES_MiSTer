@@ -178,10 +178,16 @@ signal BG_MODE_SYNC		: std_logic_vector(2 downto 0);
 signal BG_MODE_TILE_SYNC		: std_logic_vector(2 downto 0);
 signal SPR_GET_PIXEL 	: std_logic;
 signal BG_GET_PIXEL 		: std_logic;
+constant PIPE_DLY			: integer := 1;
+constant FETCH_DLY			: integer := 2;
+signal H_BG					: unsigned(8 downto 0);
+type PixPipe_t is array(1 to PIPE_DLY) of std_logic_vector(48 downto 0);
+signal PIX_PIPE			: PixPipe_t;
 signal BG_MATH 			: std_logic;
 signal BG_OUT 				: std_logic;
 signal GET_PIXEL_X		: unsigned(7 downto 0);
 signal WINDOW_X			: unsigned(7 downto 0);
+signal WINDOW_X_GET		: unsigned(7 downto 0);
 signal WIN_ACTIVE		: std_logic_vector(1 downto 0);
 signal WIN_PRE_STOP		: std_logic_vector(1 downto 0);
 signal WIN_STOP			: std_logic_vector(1 downto 0);
@@ -194,9 +200,13 @@ signal BG_DATA 			: BgData_t;
 signal BG_TILE_INFO 		: BgTileInfo_t;
 signal BG_TILES 			: BgTileInfos_t;
 signal BG1_PIX_DATA 		: std_logic_vector(11 downto 0);
+signal BG1_PIX_GET 		: std_logic_vector(11 downto 0);
 signal BG2_PIX_DATA 		: std_logic_vector(7 downto 0);
+signal BG2_PIX_GET 		: std_logic_vector(7 downto 0);
 signal BG3_PIX_DATA 		: std_logic_vector(5 downto 0);
+signal BG3_PIX_GET 		: std_logic_vector(5 downto 0);
 signal BG4_PIX_DATA 		: std_logic_vector(5 downto 0);
+signal BG4_PIX_GET 		: std_logic_vector(5 downto 0);
 signal M7_PIX_DATA 		: std_logic_vector(7 downto 0);
 
 signal MPY					: signed(26 downto 0);
@@ -261,6 +271,7 @@ signal OBJ_TILE_PRIO 	: std_logic_vector(1 downto 0);
 signal OBJ_TILE_X 		: unsigned(8 downto 0);
 
 signal SPR_PIX_DATA 		: std_logic_vector(8 downto 0);
+signal SPR_PIX_GET 		: std_logic_vector(8 downto 0);
 signal SPR_PIX_DATA_BUF : std_logic_vector(8 downto 0);
 signal SPR_PIXEL_X 		: unsigned(7 downto 0);
 signal OBJ_VRAM_ADDR 	: std_logic_vector(15 downto 0);
@@ -461,6 +472,11 @@ begin
 				VRAMRD_CNT <= VRAMRD_CNT + 1;
 			end if;
 			
+			-- Force blank acts while /PAWR is low, as on hardware, not at the end of the bus cycle.
+			if PAWR_N = '0' and PA = x"00" then
+				FORCE_BLANK <= DI(7);
+			end if;
+
 			if PAWR_N = '0' and SYSCLK_CE = '1' then
 				case PA is
 					when x"00" =>						--INIDISP
@@ -873,8 +889,8 @@ begin
 				FIRST_VBLANK_LINE <= '0';
 			end if;
 			
-			if H_CNT = 20-1  then HDE <= '1'; end if;
-			if H_CNT = 276-1 then HDE <= '0'; end if;
+			if H_CNT = 20-1+FETCH_DLY+PIPE_DLY  then HDE <= '1'; end if;
+			if H_CNT = 276-1+FETCH_DLY+PIPE_DLY then HDE <= '0'; end if;
 
 			if H_CNT = HSYNC_START then HSYNC <= '1'; end if;
 			if H_CNT = HSYNC_START+23 then HSYNC <= '0'; end if;
@@ -896,39 +912,42 @@ VBLANK_LINE <= FIRST_VBLANK_LINE and not FORCE_BLANK;
 HVCNT_ATZERO <= '1' when ENABLE = '1' and DOT_CLKR_CE = '1' and FIELD = '1' and
                         H_CNT >= LAST_DOT and V_CNT >= LAST_LINE else '0';
 
-process( H_CNT, V_CNT, LAST_VIS_LINE )
+-- The BG fetch and pixel get stages run FETCH_DLY dots behind H_CNT.
+H_BG <= H_CNT - FETCH_DLY;
+
+process( H_CNT, H_BG, V_CNT, LAST_VIS_LINE )
 begin
-	if H_CNT <= BG_FETCH_END then
+	if H_BG <= BG_FETCH_END and H_CNT <= BG_FETCH_END then
 		BG_FETCH <= '1';
 	else
 		BG_FETCH <= '0';
 	end if;
 	
-	if H_CNT >= M7_FETCH_START and H_CNT <= M7_FETCH_END and V_CNT >= 0 and V_CNT <= LAST_VIS_LINE then
+	if H_BG >= M7_FETCH_START and H_BG <= M7_FETCH_END and V_CNT >= 0 and V_CNT <= LAST_VIS_LINE then
 		M7_FETCH <= '1';
 	else
 		M7_FETCH <= '0';
 	end if;
 
-	if H_CNT >= SPR_GET_PIX_START and H_CNT <= SPR_GET_PIX_END and V_CNT >= 1 and V_CNT <= LAST_VIS_LINE then
+	if H_BG >= SPR_GET_PIX_START and H_BG <= SPR_GET_PIX_END and V_CNT >= 1 and V_CNT <= LAST_VIS_LINE then
 		SPR_GET_PIXEL <= '1';
 	else
 		SPR_GET_PIXEL <= '0';
 	end if;
 	
-	if H_CNT >= BG_GET_PIX_START and H_CNT <= BG_GET_PIX_END and V_CNT >= 1 and V_CNT <= LAST_VIS_LINE then
+	if H_BG >= BG_GET_PIX_START and H_BG <= BG_GET_PIX_END and V_CNT >= 1 and V_CNT <= LAST_VIS_LINE then
 		BG_GET_PIXEL <= '1';
 	else
 		BG_GET_PIXEL <= '0';
 	end if;
 	
-	if H_CNT >= BG_MATH_START and H_CNT <= BG_MATH_END and V_CNT >= 1 and V_CNT <= LAST_VIS_LINE then
+	if H_BG >= BG_MATH_START+PIPE_DLY and H_BG <= BG_MATH_END+PIPE_DLY and V_CNT >= 1 and V_CNT <= LAST_VIS_LINE then
 		BG_MATH <= '1';
 	else
 		BG_MATH <= '0';
 	end if;
 	
-	if H_CNT >= BG_OUT_START and H_CNT <= BG_OUT_END and V_CNT >= 1 and V_CNT <= LAST_VIS_LINE then
+	if H_BG >= BG_OUT_START+PIPE_DLY and H_BG <= BG_OUT_END+PIPE_DLY and V_CNT >= 1 and V_CNT <= LAST_VIS_LINE then
 		BG_OUT <= '1';
 	else
 		BG_OUT <= '0';
@@ -961,7 +980,7 @@ begin
 	elsif rising_edge(CLK) then
 		if ENABLE = '1' and DOT_CLKR_CE = '1' then
 			BG_MODE_SYNC <= BG_MODE;
-			if H_CNT(2 downto 0) = 7 then
+			if H_BG(2 downto 0) = 7 then
 				BG_MODE_TILE_SYNC <= BG_MODE;
 			end if;
 		end if;
@@ -971,7 +990,7 @@ end process;
 --Background engine
 HIRES <= '1' when BG_MODE_SYNC = "101" or BG_MODE_SYNC = "110" else '0';
 
-BF <= BF_TBL(to_integer(unsigned(BG_MODE_TILE_SYNC)), to_integer(H_CNT(2 downto 0)));
+BF <= BF_TBL(to_integer(unsigned(BG_MODE_TILE_SYNC)), to_integer(H_BG(2 downto 0)));
 
 process( RST_N, CLK, BF, BG_MODE_SYNC, BG_SIZE, BG_SC_ADDR, BG_SC_SIZE, BG_NBA, BG_HOFS, BG_VOFS, H_CNT, V_CNT, IN_VBL, BG_FORCE_BLANK, FORCE_BLANK_SR,
 			BG_DATA, BG_TILE_INFO, BG3_OPT_DATA0, BG3_OPT_DATA1, BG_MOSAIC_Y ,BG_MOSAIC_EN, FIELD, HIRES, BGINTERLACE, VRAM_DAI, DOT_CLK, MPY,
@@ -1023,7 +1042,7 @@ begin
 			BG_TILE_INFO(3) <= (others => '0');
 	end case;
 	
-	SCREEN_X := H_CNT;
+	SCREEN_X := H_BG;
 	SCREEN_Y := V_CNT(7 downto 0);
 
 	if BG_MOSAIC_EN(BF.BG) = '0' then
@@ -1275,7 +1294,7 @@ begin
 					M7_SCREEN_X <= (others => '0');
 				end if;
 
-				if H_CNT = M7_XY_LATCH then
+				if H_BG = M7_XY_LATCH then
 					M7_TEMP_X <= (resize(signed(M7X), M7_TEMP_X'length) sll 8);
 					M7_TEMP_Y <= (resize(signed(M7Y), M7_TEMP_Y'length) sll 8);
 
@@ -1344,10 +1363,10 @@ begin
 
 			if BG_FETCH = '1' then
 				if BG_MODE /= "111" then
-					BG_DATA(to_integer(H_CNT(2 downto 0))) <= VRAM_DBI & VRAM_DAI;
+					BG_DATA(to_integer(H_BG(2 downto 0))) <= VRAM_DBI & VRAM_DAI;
 				end if;
 				
-				if H_CNT(2 downto 0) = 0 then
+				if H_BG(2 downto 0) = 0 then
 					case BG_MODE_SYNC is
 						when "000" =>
 							BG_TILES(0).PLANES( 0) <= FlipPlane(BG_DATA(7)( 7 downto 0), BG_TILE_INFO(BG1)(14));
@@ -1452,7 +1471,7 @@ begin
 					end if;
 				end if;
 				
-				if H_CNT(2 downto 0) = 7 then
+				if H_BG(2 downto 0) = 7 then
 					BG3_OPT_DATA0 <= BG_DATA(2);
 					BG3_OPT_DATA1 <= BG_DATA(3);
 				end if;
@@ -1899,11 +1918,11 @@ variable N1,N2,N3,N4	: unsigned(3 downto 0);
 begin
 	if RST_N = '0' then
 		GET_PIXEL_X <= (others => '0');
-		BG1_PIX_DATA <= (others => '0');
-		BG2_PIX_DATA <= (others => '0');
-		BG3_PIX_DATA <= (others => '0');
-		BG4_PIX_DATA <= (others => '0');
-		SPR_PIX_DATA <= (others => '0');
+		BG1_PIX_GET <= (others => '0');
+		BG2_PIX_GET <= (others => '0');
+		BG3_PIX_GET <= (others => '0');
+		BG4_PIX_GET <= (others => '0');
+		SPR_PIX_GET <= (others => '0');
 	elsif rising_edge(CLK) then 
 		if ENABLE = '1' and DOT_CLKR_CE = '1' then
 			if H_CNT = LAST_DOT and V_CNT >= 1 and V_CNT <= LAST_VIS_LINE then
@@ -1915,7 +1934,7 @@ begin
 				if BG_MOSAIC_EN(BG1) = '0' or BG_MOSAIC_X = 0  then
 					if BG_MODE_SYNC /= "111" then
 						N1 := not (("0"&GET_PIXEL_X(2 downto 0)) + ("0"&unsigned(BG_HOFS(BG1)(2 downto 0))));
-						BG1_PIX_DATA <= BG_TILES(to_integer(N1(3 downto 3))).ATR(BG1) &
+						BG1_PIX_GET <= BG_TILES(to_integer(N1(3 downto 3))).ATR(BG1) &
 											 BG_TILES(to_integer(N1(3 downto 3))).PLANES(7)(to_integer(N1(2 downto 0))) &
 											 BG_TILES(to_integer(N1(3 downto 3))).PLANES(6)(to_integer(N1(2 downto 0))) &
 											 BG_TILES(to_integer(N1(3 downto 3))).PLANES(5)(to_integer(N1(2 downto 0))) &
@@ -1925,33 +1944,33 @@ begin
 											 BG_TILES(to_integer(N1(3 downto 3))).PLANES(1)(to_integer(N1(2 downto 0))) &
 											 BG_TILES(to_integer(N1(3 downto 3))).PLANES(0)(to_integer(N1(2 downto 0)));
 					else
-						BG1_PIX_DATA <= "0000" & M7_PIX_DATA;
+						BG1_PIX_GET <= "0000" & M7_PIX_DATA;
 					end if;
 				end if;
 				
 				if BG_MOSAIC_EN(BG2) = '0' or BG_MOSAIC_X = 0  then
 					if BG_MODE_SYNC /= "111" then
 						N2 := not (("0"&GET_PIXEL_X(2 downto 0)) + ("0"&unsigned(BG_HOFS(BG2)(2 downto 0))));
-						BG2_PIX_DATA <= BG_TILES(to_integer(N2(3 downto 3))).ATR(BG2) &
+						BG2_PIX_GET <= BG_TILES(to_integer(N2(3 downto 3))).ATR(BG2) &
 											 BG_TILES(to_integer(N2(3 downto 3))).PLANES(11)(to_integer(N2(2 downto 0))) &
 											 BG_TILES(to_integer(N2(3 downto 3))).PLANES(10)(to_integer(N2(2 downto 0))) &
 											 BG_TILES(to_integer(N2(3 downto 3))).PLANES( 9)(to_integer(N2(2 downto 0))) &
 											 BG_TILES(to_integer(N2(3 downto 3))).PLANES( 8)(to_integer(N2(2 downto 0)));
 					else
-						BG2_PIX_DATA <= M7_PIX_DATA;
+						BG2_PIX_GET <= M7_PIX_DATA;
 					end if;
 				end if;
 				
 				if BG_MOSAIC_EN(BG3) = '0' or BG_MOSAIC_X = 0  then
 					N3 := not (("0"&GET_PIXEL_X(2 downto 0)) + ("0"&unsigned(BG_HOFS(BG3)(2 downto 0))));
-					BG3_PIX_DATA <= BG_TILES(to_integer(N3(3 downto 3))).ATR(BG3) &
+					BG3_PIX_GET <= BG_TILES(to_integer(N3(3 downto 3))).ATR(BG3) &
 										 BG_TILES(to_integer(N3(3 downto 3))).PLANES(5)(to_integer(N3(2 downto 0))) &
 										 BG_TILES(to_integer(N3(3 downto 3))).PLANES(4)(to_integer(N3(2 downto 0)));
 				end if;
 				
 				if BG_MOSAIC_EN(BG4) = '0' or BG_MOSAIC_X = 0  then				 
 					N4 := not (("0"&GET_PIXEL_X(2 downto 0)) + ("0"&unsigned(BG_HOFS(BG4)(2 downto 0))));
-					BG4_PIX_DATA <= BG_TILES(to_integer(N4(3 downto 3))).ATR(BG4) &
+					BG4_PIX_GET <= BG_TILES(to_integer(N4(3 downto 3))).ATR(BG4) &
 										 BG_TILES(to_integer(N4(3 downto 3))).PLANES(7)(to_integer(N4(2 downto 0))) &
 										 BG_TILES(to_integer(N4(3 downto 3))).PLANES(6)(to_integer(N4(2 downto 0)));
 				end if;
@@ -1965,12 +1984,31 @@ begin
 					BG_MOSAIC_X <= BG_MOSAIC_X + 1;
 				end if;
 				
-				SPR_PIX_DATA <= SPR_PIX_DATA_BUF;
+				SPR_PIX_GET <= SPR_PIX_DATA_BUF;
 			end if;
 		end if;
 	end if;
 end process;
 
+
+-- Pixel x reaches the math stage PIPE_DLY dots after it is fetched: H = x+18+PIPE_DLY.
+process( CLK )
+begin
+	if rising_edge(CLK) then
+		if ENABLE = '1' and DOT_CLKR_CE = '1' then
+			PIX_PIPE(1) <= BG1_PIX_GET & BG2_PIX_GET & BG3_PIX_GET & BG4_PIX_GET & SPR_PIX_GET & std_logic_vector(WINDOW_X_GET);
+			for i in 2 to PIPE_DLY loop
+				PIX_PIPE(i) <= PIX_PIPE(i-1);
+			end loop;
+		end if;
+	end if;
+end process;
+BG1_PIX_DATA <= PIX_PIPE(PIPE_DLY)(48 downto 37);
+BG2_PIX_DATA <= PIX_PIPE(PIPE_DLY)(36 downto 29);
+BG3_PIX_DATA <= PIX_PIPE(PIPE_DLY)(28 downto 23);
+BG4_PIX_DATA <= PIX_PIPE(PIPE_DLY)(22 downto 17);
+SPR_PIX_DATA <= PIX_PIPE(PIPE_DLY)(16 downto 8);
+WINDOW_X <= unsigned(PIX_PIPE(PIPE_DLY)(7 downto 0));
 
 process( RST_N, CLK, W12SEL, W34SEL, WOBJSEL, WBGLOG, WOBJLOG, CGWSEL, CGADSUB, TMW, TSW, TM, TS, BG_MODE_SYNC, BG3PRIO, M7EXTBG,
 			WIN_ACTIVE, WIN_STOP, SPR_PIX_DATA, BG1_PIX_DATA, BG2_PIX_DATA, BG3_PIX_DATA, BG4_PIX_DATA, DOT_CLK, BG_EN)
@@ -2362,7 +2400,7 @@ begin
 
 	
 	if RST_N = '0' then
-		WINDOW_X <= (others => '0');
+		WINDOW_X_GET <= (others => '0');
 		WIN_ACTIVE <= (others => '0');
 		WIN_PRE_STOP <= (others => '0');
 		WIN_STOP <= (others => '0');
@@ -2380,7 +2418,7 @@ begin
 	elsif rising_edge(CLK) then 
 		if ENABLE = '1' then
 			if BG_GET_PIXEL = '1' and DOT_CLKR_CE = '1' then
-				WINDOW_X <= GET_PIXEL_X;
+				WINDOW_X_GET <= GET_PIXEL_X;
 			end if;
 
 			if DOT_CLKF_CE = '1' then
@@ -2400,7 +2438,7 @@ begin
 				WIN_STOP <= WIN_PRE_STOP;
 			end if;
 
-			if H_CNT = BG_GET_PIX_START then
+			if H_BG = BG_GET_PIX_START+PIPE_DLY then
 				WIN_ACTIVE <= (others => '0');
 				WIN_PRE_STOP <= (others => '0');
 				WIN_STOP <= (others => '0');
