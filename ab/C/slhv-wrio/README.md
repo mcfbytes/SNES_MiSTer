@@ -38,7 +38,6 @@ We have not seen this ROM on a real console; a photo of the result screen from o
 
 - `ab.png` / `ab-pal.png`: upstream | PR C | bsnes 2014 accuracy | MesenCE | (no hardware yet).
 - `ab.mp4`: the four MiSTer recordings (NTSC and PAL, upstream and PR C).
-- `hashes/`: tasty hash logs. Counters: every run `missed 0, torn 0, dups 0, late 0, lost 0`; captured 302 (NTSC) / 252 (PAL);
-  gap_max 1.1-1.2 ms.
+- `hashes/`: tasty hash logs, upstream and PR C. Counters: 4 runs, captured 252-302 each; missed 0, torn 0, late 0, lost 0; encoder duplicates in compared windows 0; worst gap_max 1.1 ms
 - `mgl-release-SNES_20260823.png`: the MGL route checked on the DE10-Nano with the released core `SNES_20260823.rbf` and the
   MiSTer screenshot command: the same 3 of 6 as upstream.

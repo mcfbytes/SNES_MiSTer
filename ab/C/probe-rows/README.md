@@ -17,10 +17,9 @@ On both, a `$2137` read that latches overwrites the latch the probe is measuring
 | busprobe 17, PAL | 04B | 036 | 037 | 037-038 |
 
 With C, the earlier latch survives, as on both emulators. It still reads 1-3 dots early because C alone keeps master's H/V
-IRQ timing; with A as well, both rows match (`irq/*-after.png`, built with A and C).
+IRQ timing (PR A's subject). The upstream recordings of these probes are in `ab/A/irqprobe` and `ab/A/busprobe`.
 
 - `ab-irqprobe.png`, `ab-busprobe.png`: NTSC, upstream | PR C | bsnes | MesenCE. Only the named row is PR C's; the other rows
   are PR A's subject and stay early on C.
 - `ab.mp4`: irqprobe and busprobe, upstream and PR C.
-- `hashes/`: PR C's four runs (NTSC and PAL). Counters, every run: captured 902 (PAL 752), missed 0, torn 0, dups 0, late 0,
-  lost 0, gap_max 1.1-1.2 ms.
+- `hashes/`: PR C's four runs (NTSC and PAL). Counters: 4 runs, captured 752-903 each; missed 0, torn 0, late 0, lost 0; encoder duplicates in compared windows 0; worst gap_max 1.2 ms

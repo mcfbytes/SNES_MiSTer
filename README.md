@@ -1,52 +1,90 @@
 # Evidence for the SNES H/V IRQ, PPU timing and `$2137` PRs (refs #460)
 
-This branch holds evidence only: no RTL. The changes live on these branches of `mcfbytes/SNES_MiSTer`:
+This branch holds evidence only: no RTL. The changes are two pull requests from `mcfbytes/SNES_MiSTer`: one stack of four
+commits, and one independent commit. The labels A, B, C and D name the evidence packs (`ab/A` ...).
 
-| PR | branch | commit | base |
-|---|---|---|---|
-| A: H/V IRQ flag 6 master clocks later | `irq-timing` | `2ff03cf` | `2302683` |
-| B: PPU BG fetch, output and force-blank timing | `ppu-460-pr` | `18f47d6` (one commit on A) | `2ff03cf` |
-| C: `$2137` latches only while `$4201` bit 7 is set | `slhv-wrio-gate` | `57160ab` | `2302683` |
+| label | change | branch | commit | tested as (same git tree) |
+|---|---|---|---|---|
+| A | H/V IRQ flag 6 master clocks later | `ppu-timing-stack` | `18ea233` | `2ff03cf` |
+| A | the Mode 7 precalc moved with it | `ppu-timing-stack` | `944cdfb` | `dcde04d` |
+| B | PPU BG fetch, output and force-blank timing (#460) | `ppu-timing-stack` | `b7d997f` | `3f33d28` |
+| D | the sprite stage under force blank (HblankEmuTest) | `ppu-timing-stack` | `8e89569` | `0f6b5e4` |
+| C | `$2137` latches only while `$4201` bit 7 is set | `slhv-wrio-gate` | `57160ab` | `57160ab` |
 
-The cores in every comparison:
+`ppu-timing-stack` sits on master `2302683`. Each of its commits has the same git tree as the commit it was built and
+tested as (last column; only the commit messages differ), so the cores, recordings and hashes here, which carry the
+tested-as hashes, apply to it unchanged. "PR A" below means the stack through `944cdfb`, "PR B (A+B)" through `b7d997f`.
+C is independent of the stack.
 
-| label | build |
-|---|---|
-| upstream | `2302683` (master) |
-| +IRQ | `2ff03cf` (A) |
-| +IRQ+PPU | `0148bb7`, the same tree as `18f47d6` (A + B). One comparison (SMAS, section 4) uses **f2**, an earlier build of B without its Mode 7 fix. f2 and the final build are frame-identical on every non-Mode 7 recording in both: the four #460 movies, Voronoi, TwistIT and HblankEmuTest. |
+## Cores
 
-All builds use Quartus 17.0.2 with the `.qsf`'s seed. All recordings come from a DE10-Nano running the core, captured with
-[tasty](https://github.com/mcfbytes/Tasty_MiSTer), which replays a movie from power-on and records every frame the
-core outputs, before the scaler. Each run is deterministic: the same movie on the same core gives the same frames.
+Every MiSTer recording here was made on one of these builds (D's only in `ab/D`). They are the assets of the pre-release
+[`evidence-460-cores`](https://github.com/mcfbytes/SNES_MiSTer/releases/tag/evidence-460-cores).
+
+| label | commit | release asset | sha256 | worst setup / hold slack |
+|---|---|---|---|---|
+| upstream | `2302683` | `SNES_upstream-2302683.rbf` | `77d089ae999a537818f3c8fca4176a5f8a01266ca6417cc59b14aaf3275db037` | +0.067 / +0.241 ns |
+| PR A | `dcde04d` | `SNES_A-dcde04d.rbf` | `13e34017e602179e7865695aabbc3010ab2b4433ab1631a5fce58bd24765e720` | +0.010 / +0.243 ns |
+| PR B (A+B) | `3f33d28` | `SNES_AB-3f33d28.rbf` | `3ddb923d88c89d2fc6d714136eddc43fba7ba27f7ebcbe288e1be2f70f8f79f5` | +0.032 / +0.194 ns |
+| PR C | `57160ab` | `SNES_C-57160ab.rbf` | `3c3d6d10070ad19642620553c31bcf6e96d62e3a4a263fee92a580e001556a51` | +0.052 / +0.202 ns |
+| PR D (A+B+D) | `0f6b5e4` | `SNES_D-0f6b5e4.rbf` | `05ab6399b5f086eb46322c41d48c47dbc18ac936f94307f675835121ef136bd2` | −0.212 ns setup, one path outside the PPU (`ab/D/hblankemu`) |
+
+Quartus 17.0.2 Lite in `theypsilon/quartus-lite-c5:17.0.2` (the image MiSTer Seedy uses), `quartus_sh --flow compile SNES`
+on a `git archive` of the commit, the `.qsf` seed (1), build date `261005` (`sys/build_id.tcl` writes it into `build_id.v`).
+Slack is TimeQuest's worst over all clocks at the slow 1100 mV 100 °C model. The build date is part of the design, so a
+rebuild on another day places differently: these slack figures belong to these files, and timing in general is
+section 10's 30-seed statistics. A rebuild of the same commit in this image on the same date gives a byte-identical `.rbf`.
+
+## Method
+
+- **Rig:** a DE10-Nano, kernel `7.2.9` PREEMPT_RT, with `vm.compact_unevictable_allowed=0`, `vm.compaction_proactiveness=0`
+  and the writeback workqueue cpumask `1`, all three set by the image at boot (read back before the runs: 0 / 0 / 1).
+- **Recordings:** [tasty](https://github.com/mcfbytes/Tasty_MiSTer) (binary sha256 `b7b8892c…bf06`) replays a movie from
+  power-on and records every frame the core outputs, before the scaler: an AVI plus a per-frame hash log
+  (`*.frames.tsv`). A run is deterministic: the same movie on the same core gives the same hashes.
+- **Quality gate**, on every recording (`ab/tools/recgate.py`): tasty's `missed`, `torn`, `backpressure`, `wdrop`, `werr`,
+  `avi_drop`, `gaps` and `drift` all 0; the replay's `late`, `lost` and `underruns` 0; no encoder duplicate and no
+  core-frame gap inside the compared window (movie frames 10 to the end; the only row outside it is the `resize` row at
+  frame 6 of the 239-line Contra test). 101 of the 102 final recordings pass; worst `gap_max` 1.6 ms. Re-runs: Voronoi
+  and TwistIT on upstream (encoder backpressure, 9 and 1 frames, while AVIs were being copied off the SD card; Voronoi's
+  second take then missed 1 frame, the third passed), and Contra III on A and A+B (encoder backpressure from about movie
+  frame 32,000 on, twice on A and once on A+B, so they were re-recorded as hash logs only, `--hashes-only`; A passed, A+B
+  reports one missed frame at movie frame 0, outside the compared window, and is kept with that noted, `ab/B/movies`).
+  `scaler_port_stuck` never occurred. The rig was rebooted once by the operator between runs (HDMI glitching); the
+  sysctls read back 0 / 0 / 1 after it, and no recording used here was made around it. Each pack's README carries its
+  counters line.
+- **Emulators:** bsnes 2014 accuracy (libretro), bsnes v115.1 (libretro, accurate PPU) for B's movie tests, MesenCE 2.2.1,
+  and the MesenCE [PR #275](https://github.com/nesdev-org/MesenCE/pull/275) build (`32be989`) for #274. No ROM, movie or
+  method changed since the emulator shots were taken, so they were not re-shot (`ab/README.md`).
+- **Test-ROM sweep:** load by MGL, then the MiSTer screenshot command; section 3 describes the settle rule.
 
 ## Index: A/B packs
 
 One directory per test under [`ab/`](ab/README.md): the ROM or its link and sha256, the tasty movie, a labelled side-by-side
-(upstream | PR | bsnes | MesenCE | hardware), the MiSTer recordings as MP4, and tasty's per-frame hash logs. Prebuilt cores
-and raw AVIs: pre-release [`evidence-460-cores`](https://github.com/mcfbytes/SNES_MiSTer/releases/tag/evidence-460-cores).
-Every MiSTer recording passed a quality gate (no missed, torn, dropped or late frame; `ab/README.md`). "—" = no capture.
+(upstream | PR | bsnes | MesenCE | hardware), the MiSTer recordings as MP4, and tasty's per-frame hash logs. Raw AVIs:
+the release. "—" = no capture.
 
-**PR A** (H/V IRQ +6 master clocks, `2ff03cf`)
+**PR A** (H/V IRQ +6 master clocks and the Mode 7 precalc with it, `dcde04d`)
 
 | test | what to look at | upstream | PR A | bsnes | MesenCE | hardware |
 |---|---|---|---|---|---|---|
-| [test_irqb_verbose](ab/A/test_irqb_verbose/) | checks against the ROM's built-in expected values (byuu) | 8 of 32 wrong | 32/32 | 32/32 (2014) | 32/32 | — |
+| [test_irqb](ab/A/test_irqb/) | byuu's test; verbose build: checks against the ROM's built-in expected values | **fails**; 8 of 32 wrong | passes; 32/32 | passes; 32/32 (2014) | passes; 32/32 | passes, 20 of 20 (James-F2, 3-chip GPM-02, [#164](https://github.com/MiSTer-devel/SNES_MiSTer/issues/164#issuecomment-571223903)) |
 | [irqprobe](ab/A/irqprobe/) | IRQ wake/entry H, 16 rounds | NTSC 0/18 rows equal bsnes; PAL 4/18 in band | 9/18 equal, 6 more within 1 dot; PAL 17/18 | reference | 18/18 | — |
 | [busprobe](ab/A/busprobe/) | bus access and IRQ entry H | NTSC 0/23; PAL 7/23 | 20/23; PAL 22/23 | reference | 23/23 | — |
-| [mode7_hirq](ab/A/mode7_hirq/) (#274, #275) | H-IRQ value where the M7VOFS line flickers | matches 6 of 7 hardware thresholds; `$FFFF` no IRQ | **every threshold about 1 H step earlier, 0 of 7**; `$FFFF` no IRQ | not a reference (differs from hardware) | not a reference (line at every H) | paulb-nl, 1-chip (#274) |
-| [games](ab/A/games/) | attract modes, 9,000 frames | | Kawasaki, WeaponLord, Aladdin identical; Chuck Rock, Cybernator and the Full Throttle water race differ by 1-4 dots on one line; Full Throttle's attract picks another track later | | | — |
+| [mode7_hirq](ab/A/mode7_hirq/) (#274, #275) | H-IRQ values where the M7VOFS line flickers | 7 of 7 hardware rows | **7 of 7** | not a reference | PR #275: 6 of 7; 2.2.1: line at every H | paulb-nl (1-chip) and srg320, [#274](https://github.com/MiSTer-devel/SNES_MiSTer/issues/274) |
+| [jurassic_park](ab/A/jurassic_park/) | the island attract (bsnes #397) | clean | hash-identical to upstream (12,300 frames) | glitched line | 2.2.1 glitched; PR #275 clean | — |
+| [games](ab/A/games/) | attract modes, 9,000 frames | | Kawasaki, WeaponLord, Aladdin hash-identical; Chuck Rock, Cybernator and the Full Throttle water race differ by 1-4 dots on one line; Full Throttle's attract picks another track later | | | — |
 
-**PR B** (PPU fetch/output/force-blank timing, `18f47d6` = A + B; +IRQ alone as context)
+**PR B** (PPU fetch/output/force-blank timing, `3f33d28` = A + B; PR A alone as context)
 
-| test | what to look at | upstream | PR A+B | +IRQ only | bsnes v115 | MesenCE | hardware |
+| test | what to look at | upstream | PR B (A+B) | PR A alone | bsnes v115 | MesenCE | hardware |
 |---|---|---|---|---|---|---|---|
 | [bg_fb](ab/B/bg_fb/) | bar end, red N, at start / R1 / R2 | N: no / 2 of 3 / yes | no / no / 2 of 3 | 1-2 of 3 / 2-3 of 3 / no | no N at any point | no N at any point | no / no / yes (paulb-nl, #430/#460) |
-| [contra_test_fb](ab/B/contra_test_fb/) | last line: tile at x 52-60, start / R1 | 1-2 of 3 / yes | **no / yes** | 3 of 3 / yes | — (224 lines) and no tile | no tile at any point | no / yes (paulb-nl, #460) |
+| [contra_test_fb](ab/B/contra_test_fb/) | last line: tile at x 52-60, start / R1 | 1-2 of 3 / yes | **no / yes** | 3 of 3 / yes | no tile | no tile at any point | no / yes (paulb-nl, #460) |
 | [bg_dense](ab/B/bg_dense/) | bar-end x where the N shows | 160-161, 168-169 | **159-160, 167-168** | 160-161, 168-169 | no N | no N | 151-152, 159-160, 167-168 (paulb-nl video) |
-| [hblankemu](ab/B/hblankemu/) | lines 2-3 | garbled in 2 of 4 states | **"Beha UR / -Emu" every frame** | worse | no sprites | every sprite | "Beha UR / -Emu" (paulb_nl) |
-| sweep screens: [hvdma_max, INIDISP](#3-regression-sweep-b-against-a) | hvdma_max / brightness step dot / first lit dot | striped / 76-77 / 41 | clean / 74-75 / 39 | 1,792 px / 77-78 / 43 | clean / none / whole line | clean / 76-77 / 41 | — |
-| [mode7_hirq](ab/A/mode7_hirq/) | as PR A | | frame-identical to PR A | | | | |
+| [hblankemu](ab/B/hblankemu/) | partial: BG fixed, sprites open | BG text garbled in 2 of 4 states | BG text of lines 2-3 stable and correct; sprite bar, left column, line 1 and a 7-state flicker remain | worse | no sprites | every sprite | one stable picture (paulb_nl) |
+| [sweep](#3-regression-sweep-281-test-roms) | 281 test ROMs, against A; hvdma_max px / brightness off dot / first lit dot | 1,776-1,792 / 76-77 / 41 | 262 of 281 identical to A; **0** / 74-75 / 39 | 250 of 281 identical to upstream; 1,776 / 77-78 / 43 | clean / no step / whole line | clean / 76-77 / 41 | — |
+| [movies](ab/B/movies/) | whole-movie frame hashes, against A | A+B vs A: Voronoi, SMK, F-Zero, Contra III, Super Punch-Out!! identical; TwistIT 2 frames, SMAS 19 frames, 2 dots on one line each | | | | | — |
 
 **PR C** (`$2137` latches only while `$4201` bit 7 is set, `57160ab`)
 
@@ -69,9 +107,9 @@ hardware video there) and `contra_test_fb.smc`
 - `460/contra_last-states.png`: the last line (239-line mode, V-IRQ on the last line) of `contra_test_fb`: start, R x1, R x2.
 - `460/bg_dense-bar-end-vs-N.tsv`: per bar-end position, the frames showing the red "N" (16 R presses), with the same
   measurement run on paulb-nl's hardware video (`tools/feat.py`).
-- `460/*.mp4`: the three cores stacked (upstream, +IRQ, +IRQ+PPU), the whole movie, 2x.
+- `460/*.mp4`: the three cores stacked (upstream, PR A, PR B), the whole movie, 2x.
 
-| observable | hardware | upstream | +IRQ | +IRQ+PPU |
+| observable | hardware | upstream | PR A alone | PR B (A+B) |
 |---|---|---|---|---|
 | bg_fb, start: red N | absent | absent | in 1 of 3 phases | absent |
 | bg_fb, after 1 R: red N | absent | in 2 of 3 phases | in 2 of 3 | absent |
@@ -82,128 +120,210 @@ hardware video there) and `contra_test_fb.smc`
 | contra_test_fb last line, start: tile at x 52-60 | absent | in 2 of 3 phases | in 3 of 3 | **absent** |
 | contra_test_fb last line, after 1 R: tile | present | present | present | present |
 
-The IRQ fix alone (A) moves these tests further from hardware: the core's PPU sampled force blank and fetched BG
-tiles slightly early, and the early IRQ partly hid that. B moves the BG fetch 2 dots later and math/output 1 dot later,
-and applies force blank while /PAWR is low. Together, A and B match the hardware captures on all three observables.
+PR A alone moves these tests further from hardware: the core's PPU sampled force blank and fetched BG tiles slightly
+early, and the early IRQ partly hid that. B moves the BG fetch 2 dots later and math/output 1 dot later, and applies force
+blank while /PAWR is low. Together, A and B match the hardware captures on the N and tile observables of all three tests. The bar-end and
+release-mark positions are within a dot of hardware, and the hardware's first bg_dense N position (151-152) shows on none of
+the cores.
 
 ## 2. HblankEmuTest (PR B)
 
-The test is Motive's HblankEmuTest (force blank in h-blank must stop sprite loading). The hardware photo is from paulb_nl,
-taken on all his consoles and stable: `hblankemu/hardware-paulb_nl-bpuXsI4.png`
-([nesdev forum t=18216](https://forums.nesdev.org/viewtopic.php?t=18216)). bsnes and Mesen load every sprite here.
+The test is Motive's HblankEmuTest (force blank in h-blank must stop sprite loading). The hardware reference is paulb_nl's photo, the same on four consoles (PAL 3-chip, PAL 1-chip, NTSC CPU-APU, NTSC 1-chip) plus creaothceann's SFC ([nesdev p231279](https://forums.nesdev.org/viewtopic.php?p=231279#p231279)): `hblankemu/hardware-paulb_nl-bpuXsI4.png`. bsnes and Mesen load every sprite here.
 
-`hblankemu/hblankemu-states.png` shows the first three distinct frames of frames 300-900 (of 4 or more); `hblankemu.mp4`
-covers the whole run.
+`hblankemu/hblankemu-states.png` shows the first distinct frames of movie frames 300-900 per core; `hblankemu.mp4`
+covers the whole run. Result for PR B: **partial, BG fixed, sprites open** (details and per-state shares in `ab/B/hblankemu`).
 
-- upstream: line 2 is garbled in two of four states ("BEHAVI..." bleeds through "Beha").
-- +IRQ: worse; one 38-frame state shows the full "Behaviour / -Emulator".
-- +IRQ+PPU: lines 2-3 read "Beha UR" / "-Emu" in every frame, as on hardware.
-- All cores show "THIS IS CORRECT" on line 1, where hardware keeps the "Incor" sprites; a sprite-side item that stays open.
+- upstream: 4 states, 150 frames each; the large BG text of line 2 is garbled in two of them ("BEHAVI..." bleeds through "Beha").
+- PR A alone: worse, 10 states; one 38-frame state shows the full "Behaviour / -Emulator".
+- PR B (A+B): the large BG text of lines 2-3 ("Beha" / "-Emu") is the same in every frame and correct.
+  Still unlike hardware, all sprite-side: 7 states instead of one stable picture; a tall white sprite bar in 2 of them
+  (299 of 600 frames) and a stub of it in most others; a dotted column at the left and a small glyph before "Beha" in
+  every state; and line 1 reads "THIS IS CORRECT" where hardware keeps the "Incor" sprites.
+- Sprites: fixed by the next commit in the stack (`8e89569`, tested as `0f6b5e4`; `ab/D`).
 
-## 3. Regression sweep (B against A)
+## 3. Regression sweep (281 test ROMs)
 
 281 test ROMs (`sweep/roms.txt`: the higan collection by KungFuFurby, jonasquinn, Sour, tukuyomi and undisbeliever, plus
-undisbeliever's `snes-test-roms`). Each ROM was loaded by MGL and screenshotted after a fixed time, once on +IRQ and once
-on +IRQ+PPU; the two were compared pixel for pixel (`tools/sweepdiff.py`).
+undisbeliever's `snes-test-roms`), no input. Each ROM is loaded by MGL and screenshotted with the MiSTer `screenshot`
+command; screens are compared pixel for pixel with `tools/sweepdiff.py <dir> <tagA> <tagB>`.
 
-- **262 of 281 pixel-identical.** The 19 that differ are listed in `sweep/sweep-m1-vs-pr2.tsv`.
-- **12 of the 19 are run-to-run noise.** They also differ between two runs of the same stock core
-  (`sweep/noise-stock-run-a-vs-run-z.tsv`): speed_test_v51, test_hello, test_noise, ppubusact, five auto-joypad
-  timing ROMs, hdmaen_latch_test_2 (u-), dma-ends-hdma-start-1-ch (u-).
-- **The other 7, rerun twice on each core** (`sweep/screens/`; rows upstream / +IRQ / +IRQ+PPU, bsnes, Mesen):
+**Settle rule (adaptive wait).** A screenshot at 2 s, then about one a second, stopping at the first two identical in a
+row, capped at the ROM's old fixed wait (15-45 s, `roms.txt`). Checked against the fixed wait on upstream
+(`sweep/fixed-vs-adaptive-up.tsv`): 242 of 281 screens identical; the other 39 are ROMs whose screen keeps changing or
+varies from load to load (timers, SPC and CPU speed readouts, auto-joypad tests, `hvdma_max`). Those 39 (`sweep/keep.txt`)
+keep the fixed wait in every pass, so each comparison below uses the same method on both sides. A pass takes about 31 min
+instead of 92. Logs: `sweep/logs/` (ROM, mode, seconds, screenshots taken).
 
-| ROM | upstream | +IRQ | +IRQ+PPU | reference |
+The upstream pass against itself is the first noise reference: the 39 ROMs of `keep.txt` differ between two loads of the
+same core. The second is a control run (`sweep/control.txt`, `sweep/control-classify.tsv`): every ROM that differed in any
+comparison, plus 12 drawn at random from those that never did, once more on each core at the fixed wait; and the five
+SPC-side readouts among them three more times per core at the fixed wait and once at 60 s. A difference counts as a change
+only if the screens are stable within each core and never shared between the two. All 12 random ROMs are identical on
+every core and every load.
+
+- **PR A against upstream: 250 of 281 identical** (`sweep/up-vs-A.tsv`); of the 31 that differ, 13 are changes:
+  `test_irqb` twice (now passes); the four INIDISP ROMs (two builds of each test; below); `hdmaen_latch_test` twice (53 red
+  lines to 42) and both builds of `hdmaen_latch_test_2` (35-36 to 15-16; the known open item, section 6);
+  `timer_at_power_reset` (below); and Sour's `timing_test` twice, whose IRQ+NMI row reads H `$0010` on upstream and `$000E`
+  on A (V `$00CF` on both; every other row identical). bsnes and MesenCE differ from the core, and from each other, on most
+  rows of that screen, including the power-on values, so they are not a reference for it. The other 18 vary between loads
+  of one core (auto-joypad, `speed_test_v51`, `test_hello`, `test_noise`, `ppubusact`, `hvdma_max`'s count), or are
+  `SPC700AND` and `smpspeed`, which are identical on all three cores at the fixed wait: the adaptive pass caught them at
+  another moment of a screen that is still updating.
+- **PR B (A+B) against PR A: 262 of 281 identical** (`sweep/A-vs-AB.tsv`); of the 19 that differ, 7 are changes:
+  `HblankEmuTest` (section 2); the four INIDISP ROMs (below); `hvdma_max` (below); and `hvdma`, where A+B shows a few dots of
+  the upper pattern on line 107, the line where the test switches pattern (dots 34-39 and 226-231; the exact dots vary
+  between loads on A+B, while upstream and A show none in five loads each; bsnes and MesenCE also show dots of the upper
+  pattern on that line). The other 12 vary between loads of one core, or are `SPC700AND`, `SPC700ORA`, `ipl-speed-test` and
+  `hdmaen_latch_test_2`'s first build, which are identical on A and A+B at the fixed wait (adaptive capture timing again).
+
+`sweep/screens/` (rows upstream / A / A+B, then bsnes 2014 and MesenCE 2.2.1 where shot):
+
+| ROM | upstream | PR A | PR B (A+B) | reference |
 |---|---|---|---|---|
-| 001 hvdma | varies run to run on every core; the sweep's grey frame came from being the first ROM loaded after a movie | | | |
-| 002 hvdma_max | 3,568 non-green px (striped left column) | 1,792 | **0 (clean green)** | bsnes, Mesen: clean green |
-| 016 HblankEmuTest | see section 2 | | **matches hardware** | |
-| 192 hdmaen_latch_test_2 | varies run to run | | +IRQ+PPU pass 1 == +IRQ pass 1 | known open item (below) |
-| 193/218 inidisp_brightness_delay | brightness step at dot 76-77 | 77-78 | 74-75 | Mesen 76-77, bsnes none |
-| 195/219 inidisp_enable_display_mid_frame | first lit dot on line 88: 41 | 43 | 39 | Mesen 41, bsnes whole line |
+| 002 hvdma_max | 1,776-1,792 non-green px (striped left column; varies) | 1,776 | **0 (clean green)** | bsnes, MesenCE: clean green |
+| 193/218 inidisp_brightness_delay: brightness off / on at dot | 76-77 / 70-71 | 77-78 / 72-73 | 74-75 / 69-70 | MesenCE 76-77, bsnes no step |
+| 195/219 inidisp_enable_display_mid_frame: first lit dot on line 88 | 41 | 43 | 39 | MesenCE 41, bsnes whole line |
+| 191/215 hdmaen_latch_test: red lines | 53 | 42 | 42 | not shot |
+| 192/216 hdmaen_latch_test_2: red lines | 35-36 | 15-16 | 14-15 | bsnes 52, MesenCE 28-32 |
+| 081/082 timing_test (Sour): IRQ+NMI row, H / V | `$0010` / `$00CF` | `$000E` / `$00CF` | as A | not comparable (emulators differ on most rows) |
+| 105 timer_at_power_reset (blargg): power-on stage | "0008 Failed" | **"000E Press reset"** | as A | bsnes, MesenCE: "000E Press reset" |
 
-The two INIDISP ROMs are stable on every core across both passes. Their shift has the same mechanism the force-blank
-tests validate: brightness and force blank apply at the math/output stage, which now sees each pixel 3 dots later. Mesen
-does not match the bg_fb hardware windows either, so it is not a reference for this timing. We have no hardware capture
-of these two ROMs.
+`timer_at_power_reset` runs in two stages (its text: "Press reset", then "Passed" or "Failed" after the reset): upstream
+fails the power-on stage; PR A reaches the reset prompt with the same reading as bsnes and MesenCE. The ROM documents no
+hardware value. It reads the same on every load of each core (7 on upstream, 6 each on A and A+B).
 
-## 4. Games and demos (B against A)
+The two INIDISP ROMs are stable on every core. PR A moves them 1-2 dots later because their INIDISP writes come from an
+H-IRQ that now fires 1.5 dots later; PR B moves them 3 dots earlier because brightness and force blank apply at the
+math/output stage, which now sees each pixel 3 dots later (H = x+21 instead of x+18), the mechanism the #460 force-blank
+tests validate against hardware. MesenCE does not match the bg_fb hardware windows either, so it is not a reference for
+this timing, and there is no hardware capture of these two ROMs.
 
-`games/game-ab.tsv`: per-frame hashes of whole movies, +IRQ against +IRQ+PPU (`tools/hashcmp.py`; tasty's encoder
-duplicates are excluded).
+## 4. Movies (PR B against PR A, and upstream)
 
-- Identical: Contra III TAS (45,442 frames valid in both runs, Mode 7 stages included), Super Punch-Out!! TAS (57,224),
-  Super Mario Kart attract (10,800) and F-Zero attract (10,800, both Mode 7), Voronoi split-screen demo (3,600). Both
-  TAS runs finished on both cores with every input applied on time.
-- TwistIT: 2 of 14,400 frames differ by a few pixels on one scanline.
-- SMAS (Super Mario Bros.) TAS, on f2 (the pr2 run got one late input from the replay side and left the movie): 19 of 18,235 frames differ, all by 1-2 px at the left end of line 31, the status-bar IRQ split
-  (`games/smas-line31-zoom.png`). Every movie stays in sync to the end.
-- f2 (before the Mode 7 fix) differed on the last 2 pixels of every Mode 7 line; the final commit's Mode 7 output is
-  identical to +IRQ on both Mode 7 attract modes and on Contra III.
+`ab/B/movies`: seven movies, from power-on, on all three cores, compared by frame hash.
+
+- **PR B (A+B) against PR A:** Voronoi split-screen (3,600 frames), Super Mario Kart and F-Zero attract (Mode 7, 10,800
+  each), Contra III TAS (45,494 frames compared, Mode 7 stages included) and Super Punch-Out!! TAS (57,224) are identical.
+  TwistIT: 2 of 14,400 frames differ, by 2 dots on one line each. SMAS (Super Mario Bros.) TAS: 19 of 18,235 frames
+  differ, each by 2 dots near the left end of line 31, the status-bar IRQ split (`ab/B/movies/smas-line31-zoom.png`).
+- **PR A against upstream:** identical except SMAS (14 frames, the same line-31 split) and Contra III (56 frames in two
+  scenes that write Mode 7 registers from an IRQ; PR A's Mode 7 commit).
+- Every movie stays in sync to its end on every core, with every input applied on time.
 
 ## 5. The game in #460 (Contra SNES MSU-1)
 
 Not addressed by these PRs and not claimed. Its poster-menu symptom appears where the game releases force blank
 mid-line, so it may be related to the same timing; it needs hardware statistics before anything can be said.
 
-## 6. H/V IRQ timing (PR A) and the `$2137` gate (PR C)
+## 6. H/V IRQ timing (PR A)
 
-- `irq/irqb-verbose-{before,after}.png`: byuu's `test_irqb` (checked against the ROM's built-in expected values), rebuilt with a verbose
-  results screen (`probes/test_irqb_verbose/`: `gen.py` + `patch.asm` applied to the original `test_irqb.smc`; the
-  measurement code is unchanged). Upstream: 8 of 32 checks wrong (sub-tests 4 and 5, 3-4 dots early). With A: 32/32.
-- `irq/{busprobe,irqprobe}-{before,after}.png` and `pal-*`: two probe ROMs written for this (`probes/`, source and
-  ROMs; `gen.py` builds them with bass-untech and undisbeliever's `snes-test-roms` font, checked out beside it; `refs.sh`
-  regenerates the references). Each probe times one bus access or IRQ entry with the H/V counter latch, 16 rounds. The references are
-  bsnes 2014 accuracy and MesenCE 2.2.1, which agree on all 41 NTSC rows. Before A, every IRQ-timed row is 1-2 dots
-  early. With A, busprobe matches on 21 of 23 rows; the other 2 each have one round landing on DRAM refresh. irqprobe
-  matches on 9 of 18 rows, 7 more are within 1 dot, and 2 NOP-sled rows sit on a phase boundary, where the two
-  emulators also spread in PAL. PAL: 41 of 41 rows fall inside the bsnes/Mesen band, against 11 of 41 before.
-  Per-row tables: `irq/probe-tables.md`.
-- The section 6 measurements were taken before master moved to `2302683`. "Before" is a control build of `c61bfd4`;
-  `2302683` adds only #511 (CX4 DMA timing), and A's patch is identical on both. The "after" screenshots come from a
-  build with both A and C. C affects only the irqprobe row `2137 WR7F` and the busprobe row `IRQ 4203L`.
-- Regression for A (119 IRQ/NMI/DMA/HDMA/timing ROMs, the c61bfd4 control against +IRQ): 105 identical. test_irqb fails → passes. The
-  noise ROMs are as in section 3. Sour timing_test (WIP) end H-POS $10 → $0E; dma-ends-hdma-start still "HDMA OK";
-  hdmaen_latch_test(_2) red lines change (below).
-- **Known open item:** `hdmaen_latch_test_2` red lines (8 channels x 13 HTIMEs) are 35 upstream, about 15-17 with A
-  (and the same with B), against 52 on bsnes 2014 accuracy and 28-32 on MesenCE (it varies between runs). The two emulators disagree, and we have no hardware
-  count. The early IRQ was partly masking a separate HDMAEN latch question.
-- **`slhv-wrio` (PR C), a test ROM written for it** (`ab/C/slhv-wrio/`: source, build script, NTSC and PAL ROMs, MGLs,
+- **test_irqb** (`ab/A/test_irqb`): byuu's test. Upstream ends red (fail); PR A blue (pass), as on bsnes 2014 accuracy and
+  MesenCE 2.2.1, and as on a real 3-chip console: James-F2 ran it 20 times on a GPM-02 and it passed 20 of 20
+  ([#164](https://github.com/MiSTer-devel/SNES_MiSTer/issues/164#issuecomment-571223903)). A verbose build of the same ROM
+  shows all 32 checks: upstream gets 8 wrong (sub-tests 4 and 5, 3-4 dots early), PR A none.
+- **Probe ROMs** (`ab/A/irqprobe`, `ab/A/busprobe`; source and ROMs in `probes/`, built with bass-untech and
+  undisbeliever's `snes-test-roms` font). Each probe times one bus access or IRQ entry with the H/V counter latch, 16
+  rounds. The references are bsnes 2014 accuracy and MesenCE 2.2.1, which agree on all 41 NTSC rows. Upstream: every
+  IRQ-timed row is 1-2 dots early. PR A: busprobe matches 20 of 23 NTSC rows (2 have one round landing on DRAM refresh;
+  row 17 is PR C's), irqprobe 9 of 18 with 6 more within 1 dot (2 NOP-sled rows sit on a phase boundary; row 02 is PR C's).
+  PAL: 39 of 41 rows inside the bsnes/Mesen band (the 2 outside are PR C's rows), against 11 of 41 upstream.
+- **Games whose IRQ timing was tuned against the 2024 S-CPU rework** (`ab/A/games`): attract modes of Full Throttle (#279, including its water-bike race),
+  Chuck Rock (#220), Cybernator (#103), Kawasaki Superbike Challenge, WeaponLord (#502) and Aladdin, 9,000 frames each.
+  Kawasaki, WeaponLord and Aladdin are hash-identical on every frame. Chuck Rock (123 frames), Cybernator (64) and the Full
+  Throttle water race (282 frames) differ by 1-4 dots on one line each, at mid-line split points where a 1.5-dot later IRQ
+  moves a write by one dot; #279's bottom-line garbage does not return. Full Throttle's attract also runs its logo fade at a
+  slightly different brightness per frame and, from frame 8,031, picks a different track (its choice depends on its own
+  frame timing). There is no hardware capture of these scenes, so the one-dot differences are not called right or wrong.
+- **Jurassic Park's island attract** (bsnes #397, `ab/A/jurassic_park`): upstream and PR A are hash-identical on all
+  12,300 frames, with no glitched line.
+- **Known open item:** `hdmaen_latch_test_2` (8 channels x 13 HTIMEs) shows 35-36 red lines on upstream, 15-16 with PR A and 14-15 with A+B (a line either way between
+  runs). bsnes 2014 accuracy shows 52 and
+  MesenCE 28-32 (it varies between runs); the two emulators disagree, and there is no hardware count. The early IRQ was
+  partly masking a separate HDMAEN latch question.
+
+## 7. Mode 7 H-IRQ tests, #274 (PR A)
+
+`ab/A/mode7_hirq`: paulb-nl's eight `mode7_tests` variants, each H-IRQ value from 0 to 8, against two consoles: paulb-nl's
+1-CHIP-01 table and srg320's console, which gives 2-6 for bra_nops82 where paulb-nl's gives 1-6. Upstream and PR A both
+match 7 of 7 hardware rows (bra_nops82 as 2-6; on 1-6 neither shows H 1); PR B is hash-identical to PR A.
+MesenCE PR #275 matches 6 of 7.
+
+![#274: hardware against upstream, PR A and MesenCE PR #275](ab/A/mode7_hirq/m7-hardware-vs-cores.png)
+
+**Why PR A has two commits.** The test times the H-IRQ and the PPU's Mode 7 parameter read together, and the read point
+has been re-tuned against it every time the CPU's IRQ timing moved:
+
+| date | commit | change | #274 on MiSTer |
+|---|---|---|---|
+| 2021-05-03 | `a04ac87` (#272) | Mode 7 parameters latched at `M7_FETCH_START-1` (H 13) | every threshold 3-4 H late, e.g. bra_nops82 6-10 against 1-6 |
+| 2021-05-07 | `1922a49` (#277) | `M7_XY_LATCH` = 11 ("H_CNT = 11", [srg320](https://github.com/MiSTer-devel/SNES_MiSTer/issues/274#issuecomment-834503750)) | close ([paulb-nl](https://github.com/MiSTer-devel/SNES_MiSTer/issues/274#issuecomment-834826314)) |
+| 2024-09-29 | `f2409f0` | `M7_XY_LATCH` = 8, with the S-CPU rework `bd4d8fb` | "almost the same as real hardware" ([paulb-nl](https://github.com/MiSTer-devel/SNES_MiSTer/issues/274#issuecomment-2600790322)) |
+| 2024-10-06 | `657758e` | 65C816 IRQ fix (emudetect) | broken again (same comment) |
+| 2025-02-13 | `4502df9` | interrupt delay after DMA | fixed ([srg320](https://github.com/MiSTer-devel/SNES_MiSTer/issues/274#issuecomment-2657501805)) |
+| 2025-09-28 | `5eeddd6` | `M7_XY_LATCH` = 7; unchanged on master `2302683` | 7 of 7 |
+
+PR A's first commit moves the IRQ flag 6 master clocks later; against the unchanged read point that moves every #274
+threshold about one H step early (0 of 7, `history.md`). The second commit moves the Mode 7 precalc by the same 6 clocks
+(latch H 7 → 9, on the other clock edge), which restores all seven.
+
+## 8. The `$2137` gate (PR C)
+
+- **`slhv-wrio`, a test ROM written for it** (`ab/C/slhv-wrio/`: source, build script, NTSC and PAL ROMs, MGLs,
   movies). No input; six cases, each priming a latch at line 40 and then acting at line 120, judged on the latched V
   against bsnes 2014 accuracy (MesenCE agrees on every V). Upstream passes 3 of 6: a `$2137` read with `$4201` bit 7 clear
   latches (case 2), even after bit 7 was set and cleared earlier (case 3, fullsnes's "or was set"), and three reads in a row
   latch each time (case 6). PR C passes 6 of 6, NTSC and PAL. Both cores latch on the 1→0 write itself (case 4, the
   EXTLATCH falling edge; `JOY2_P6_in` is 1 with no gun or SNAC) and not on 0→1 (case 5), as both emulators do.
   No real-console result yet.
-- **A hardware reference PR A does not match: paulb-nl's mode 7 H-IRQ tests (#274)** (`ab/A/mode7_hirq/`). Upstream
-  reproduces the 1-chip console's flicker thresholds on six of seven variants; PR A moves each about one H step earlier
-  and matches none. A+B is frame-identical to A there. `test_irqb` (fixed by A) and these tests pull in opposite directions.
+- **Probe rows** (`ab/C/probe-rows`): irqprobe `2137 WR7F` and busprobe `IRQ 4203L` keep their earlier latch with PR C, as
+  on both emulators.
 
-## 7. Timing closure (MiSTer Seedy, 30 seeds per side, Quartus 17.0.2)
+## 9. Open items
 
-| PR | run | result |
-|---|---|---|
-| A | `irq-timing` 2ff03cf vs 2302683: queued; the report will follow as a comment on the PR | the same patch on c61bfd4: [run 37205363393](https://github.com/mcfbytes/SNES_MiSTer/actions/runs/37205363393), `seedy/A-earlier-*.md`. "Possible regression": 3/30 seeds meet timing against 12/30; `emu c2` setup fails more often, on master's own `sdram|rbuf → P65C816|P` path |
-| A+B | [run 37264587249](https://github.com/mcfbytes/SNES_MiSTer/actions/runs/37264587249), `seedy/B-ppu-460-0148bb7-vs-2302683.md` | 9/30 seeds meet timing against 8/30 (p 1.00). Hold flag: 6/30 seeds against 1/30, all on existing `msu_data_store`/`savestates` → `ddram` cache-address crossings, no PPU paths: `seedy/B-hold-analysis.md` |
-| C | `slhv-wrio-gate` 57160ab vs 2302683: queued; the report will follow as a comment on the PR | the same patch on c61bfd4: [run 37214664117](https://github.com/mcfbytes/SNES_MiSTer/actions/runs/37214664117), "no measurable regression" (8/30 against 12/30, p 0.41) |
+- HblankEmuTest sprites (section 2): line 1, the white bar, the left column and the glyph, and the flicker between states.
+- `hdmaen_latch_test_2` (section 6): no hardware count, and the emulators disagree.
+- `inidisp_brightness_delay` and `inidisp_enable_display_mid_frame` (section 3): PR B moves the step 2 dots earlier than
+  upstream and MesenCE; no hardware capture of these two ROMs.
+- Super Mario World / SMAS+SMW, Ludwig's castle (#253, a Mode 7 scene): not tested. No movie that reaches Ludwig syncs here
+  (the lsnes "warps" TAS desyncs at once on MesenCE; the #253 save would need hand-made input through the castle).
+- #274 bra_nops82: paulb-nl's console flickers at 1-6, srg320's at 2-6; the cores give 2-6.
+- `slhv-wrio` on a real console: a photo of the result screen would fill PR C's hardware column.
 
-## 8. Reproducing a recording
+## 10. Timing closure (MiSTer Seedy, 30 seeds per side, Quartus 17.0.2)
 
-Build the core from the branch and put the `.rbf` on the SD card. Then:
+Each head against master `2302683`, at the slow 100 °C corner (full reports: `seedy/final/*-summary.md`; they also follow
+as comments on each PR):
+
+| head | seeds that close timing (head / master) | p | recommended seed | flagged |
+|---|---|---|---|---|
+| PR A `dcde04d` | 9 / 8 of 30 | 1.00 | 21 (+0.252 ns) | logic +203 ALMs (p < 0.001) |
+| PR B `3f33d28` | 6 / 8 of 30 | 0.76 | 6 (+0.204 ns) | total negative setup slack −0.986 ns (p = 0.024) |
+| PR C `57160ab` | 6 / 8 of 30 | 0.76 | 7 (+0.252 ns) | total negative setup slack −1.731 ns (p = 0.003); `emu c2` fails on 20 seeds against 8 (p = 0.004); +87 ALMs |
+| control: #512 `f954038` | 7 / 8 of 30 | 1.00 | 27 (+0.250 ns) | total negative setup slack −1.792 ns (p = 0.045) |
+
+The control row is a PR (#512) that touches no timing logic, yet it gets the same kind of flag at small p as B and C. The
+same 30-seed baseline was used for all four, so it may be a lucky sample; the flags are reported as Seedy gives them,
+neither claimed as real nor dismissed. Seedy's own build of each head at the `.qsf` seed misses timing (and so does master's,
+−0.345 ns); the release builds in the core table meet it. Placement at one seed is not stable across builds (the build date is part of the design), which is why the 30-seed statistics are the measure. Reports for earlier heads: `history.md`.
+
+## 11. Reproducing a recording
+
+Build the core from the branch (or take it from the release) and put the `.rbf` on the SD card. Then:
 
 ```sh
 tasty play <movie> --rom <rom> --core <core.rbf> --record <outdir> --linger 0 --no-splash [--lead -1]
 ```
 
 `<outdir>/<movie>.frames.tsv` lists every frame (movie frame, hash, size, encoder duplicate flag) and `<outdir>/*.avi` holds the
-video. `tools/hashcmp.py a.tsv b.tsv` compares two runs by movie frame. `tools/vsheet.sh` and `tools/sbs.sh` made the
-sheets and MP4s here, for example:
+video. `tools/hashcmp.py a.tsv b.tsv` compares two runs by movie frame; `ab/tools/framediff.py` reports the pixels and lines
+of the frames that differ. `ab/tools/rigrun.sh` is the loop for one core; `tools/vsheet.sh` and `tools/sbs.sh` made the
+`460/` sheets and MP4s, for example:
 
 ```sh
-X0=200 CW=200 VS=8 tools/vsheet.sh <recdir> bg_fb 4 20 bg_fb-states.png "upstream=m0,+IRQ=m1,+IRQ+PPU=pr2" \
+X0=200 CW=200 VS=8 tools/vsheet.sh <recdir> bg_fb 4 20 bg_fb-states.png "upstream=up,PR A=A,PR B (A+B)=AB" \
   "start:10:300" "after R x1:305:420" "after R x2:425:540"
-X0=0 CW=160 VS=24 tools/vsheet.sh <recdir> contra_last 236 3 contra_last-states.png "upstream=m0,+IRQ=m1,+IRQ+PPU=pr2" \
-  "start:540:650" "after R x1:655:770" "after R x2:775:890"
-sh tools/sbs.sh <recdir> bg_fb 0 bg_fb.mp4 m0:upstream m1:+IRQ pr2:+IRQ+PPU
+sh tools/sbs.sh <recdir> bg_fb 0 bg_fb.mp4 "up:upstream 2302683" "A:PR A dcde04d" "AB:PR B (A+B) 3f33d28"
 ```
 
 Here `<recdir>/<tag>-<movie>/` is a tasty `--record` directory.
@@ -224,12 +344,35 @@ Here `<recdir>/<tag>-<movie>/` is a tasty `--record` directory.
 | Super Punch-Out!! | [TASVideos 4933M](https://tasvideos.org/4933M) (`spo-4933M.bk2`, not copied here) | Super Punch-Out!! (USA) | as TASVideos 4933M |
 
 The `.lsmv` movies are generated by `tools/mklsmv.py <rom> <out.lsmv> <frames> [script]`. They hold the ROM's SHA-256
-and no ROM data. Test-ROM sweep: MGL load, then a screenshot after ~45 s (20 s for short
-ROMs) per ROM; compare with `tools/sweepdiff.py <dir> <tagA> <tagB>`. `tools/stack.py` made `sweep/screens/`.
+and no ROM data.
 
-Not committed, by size (available on request): the raw tasty recordings (AVI + frame logs) and the 60 per-seed Seedy
-STA reports (in the runs' `seedy-reports` artifacts).
+## Changes against earlier evidence
 
-Credits: paulb-nl (test ROMs, hardware photos and videos), paulb_nl/Motive (HblankEmuTest), byuu (test_irqb),
-undisbeliever (snes-test-roms; its 1bpp font is used by the probe ROMs), the higan test-ROM authors, the TASVideos
-authors (HappyLee for 6744M and the authors of 4363M and 4933M), MesenCE and bsnes for the references.
+Every recording was compared by frame hash with the earlier recording of the same tree (or of `2ff03cf`, PR A's first
+commit, where the Mode 7 commit cannot reach):
+
+- **Identical on every frame:** test_irqb and test_irqb_verbose; irqprobe and busprobe NTSC/PAL on PR A and PR C;
+  slhv-wrio NTSC/PAL on upstream and PR C; the four #460 tests and HblankEmuTest on all three cores; the #274 recordings
+  of PR A and A+B (against the earlier `dcde04d` runs) and upstream; Jurassic Park; the six games; Voronoi, TwistIT, SMK,
+  F-Zero, SMAS and Super Punch-Out!! on PR A (against `2ff03cf`) and on A+B (against the earlier B builds; SMAS against `f2`).
+- **upstream PAL irqprobe:** one frame differs: the result screen appears at movie frame 288 instead of 289; the final screen is identical.
+- **PR A against `2ff03cf` alone:** differs on the #274 recordings (the point of the Mode 7 commit) and on Contra III's
+  Mode 7 frames (section 4).
+- **hvdma_max** varies from run to run on upstream (1,792 and 1,776 non-green pixels in two passes tonight; the earlier
+  evidence quoted 3,568), so the earlier "3,568 / 1,792 / 0" row was not a stable per-core value (section 3).
+- **PAL probe rows:** the earlier "41 of 41 rows in band" came from a build of A and C together; on PR A alone it is 39 of 41,
+  the two outside being PR C's rows.
+- **Sweep:** the earlier classification used one pair of upstream runs as the noise list. With the control run, `hvdma`
+  is stable on upstream and A (it varied in the earlier run because it followed a movie) and differs only on A+B;
+  `timing_test`, which is on this sweep's noise list (`keep.txt`), is a stable PR A change; `SPC700AND`/`SPC700ORA`/`ipl-speed-test`/`smpspeed`
+  differences come from when the screen was captured (section 3).
+- **HblankEmuTest:** the earlier wording ("as on hardware", "in every frame") overclaimed. Only the large BG text of lines 2-3
+  matches; the sprite-side differences and the flicker are now listed (section 2).
+- **Cores:** every `.rbf` was rebuilt (the core table). `dcde04d` and `3f33d28` are byte-identical to earlier builds of the same
+  trees in the same Docker image; upstream and C differ from the earlier release assets, which were built in another image.
+- History of builds and labels used in earlier commits of this branch: [`history.md`](history.md).
+
+Credits: paulb-nl (test ROMs, hardware photos, videos and the #274 table), srg320 (the second #274 console), James-F2
+(test_irqb on a GPM-02, #164), paulb_nl/Motive (HblankEmuTest), byuu (test_irqb), undisbeliever (snes-test-roms; its 1bpp
+font is used by the probe ROMs), the higan test-ROM authors, the TASVideos authors (HappyLee for 6744M and the authors of
+4363M and 4933M), SourMesen (MesenCE PR #275), MesenCE and bsnes for the references.

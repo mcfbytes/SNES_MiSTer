@@ -1,0 +1,5 @@
+073-SPC700AND.sfc|60
+077-SPC700ORA.sfc|60
+105-timer_at_power_reset.sfc|60
+177-smpspeed.sfc|60
+230-u-ipl-speed-test.sfc|60

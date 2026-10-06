@@ -1,4 +1,4 @@
-# Games whose IRQ timing was tuned against the 2024 S-CPU rework (bd4d8fb), upstream against PR A
+# Games whose IRQ timing was tuned against the 2024 S-CPU rework (bd4d8fb), upstream 2302683 against PR A dcde04d
 
 Attract modes, no input: each movie is 9,000 empty frames (2.5 minutes) from power-on. The ROMs are not here; the movies record
 each ROM's sha256 (No-Intro USA sets, headerless). Compared by tasty frame hash (`tools/hashcmp.py`), then by pixels
@@ -17,5 +17,5 @@ We have no hardware capture of any of these scenes, so the one-dot differences c
 on mid-line split points, where a 1.5-dot later IRQ would move a write by one dot. The Full Throttle attract's track choice
 depends on its own frame timing, so a different track is expected once anything shifts.
 
-- `hashes/`: upstream and A for all six. Counters, every run: captured 9,001-9,006, missed 0, torn 0, dups 0, late 0, lost 0,
-  gap_max 1.1-1.6 ms. Raw AVIs: release `evidence-460-cores`.
+- `hashes/`: upstream and A for all six. Raw AVIs: release `evidence-460-cores`. Panels: upstream | PR A at the named frame.
+- Counters: 12 runs, captured 9,002 each; missed 0, torn 0, late 0, lost 0; encoder duplicates in compared windows 0; worst gap_max 1.6 ms

@@ -1,46 +1,46 @@
 core	bar_end_x	frames	frames_showing_N
-upstream	157	94	0
-upstream	158	203	0
-upstream	159	15	0
-upstream	160	65	65
-upstream	161	59	59
-upstream	162	67	0
-upstream	163	54	0
-upstream	164	59	0
-upstream	165	60	0
-upstream	166	60	0
-upstream	167	65	0
-upstream	168	56	56
-upstream	169	59	59
-upstream	170	17	0
-+IRQ	159	189	0
-+IRQ	160	108	108
-+IRQ	161	39	39
-+IRQ	162	62	0
-+IRQ	163	61	0
-+IRQ	164	58	0
-+IRQ	165	56	0
-+IRQ	166	60	0
-+IRQ	167	73	0
-+IRQ	168	53	53
-+IRQ	169	56	56
-+IRQ	170	42	0
-+IRQ+PPU	155	94	0
-+IRQ+PPU	156	203	0
-+IRQ+PPU	157	15	0
-+IRQ+PPU	158	65	0
-+IRQ+PPU	159	59	59
-+IRQ+PPU	160	67	67
-+IRQ+PPU	161	54	0
-+IRQ+PPU	162	59	0
-+IRQ+PPU	163	60	0
-+IRQ+PPU	164	60	0
-+IRQ+PPU	165	65	0
-+IRQ+PPU	166	56	0
-+IRQ+PPU	167	59	59
-+IRQ+PPU	168	58	58
-+IRQ+PPU	169	64	0
-+IRQ+PPU	170	19	0
+upstream 2302683	157	94	0
+upstream 2302683	158	203	0
+upstream 2302683	159	15	0
+upstream 2302683	160	65	65
+upstream 2302683	161	59	59
+upstream 2302683	162	67	0
+upstream 2302683	163	54	0
+upstream 2302683	164	59	0
+upstream 2302683	165	60	0
+upstream 2302683	166	60	0
+upstream 2302683	167	65	0
+upstream 2302683	168	56	56
+upstream 2302683	169	59	59
+upstream 2302683	170	17	0
+PR A dcde04d	159	189	0
+PR A dcde04d	160	108	108
+PR A dcde04d	161	39	39
+PR A dcde04d	162	62	0
+PR A dcde04d	163	61	0
+PR A dcde04d	164	58	0
+PR A dcde04d	165	56	0
+PR A dcde04d	166	60	0
+PR A dcde04d	167	73	0
+PR A dcde04d	168	53	53
+PR A dcde04d	169	56	56
+PR A dcde04d	170	42	0
+PR B (A+B) 3f33d28	155	94	0
+PR B (A+B) 3f33d28	156	203	0
+PR B (A+B) 3f33d28	157	15	0
+PR B (A+B) 3f33d28	158	65	0
+PR B (A+B) 3f33d28	159	59	59
+PR B (A+B) 3f33d28	160	67	67
+PR B (A+B) 3f33d28	161	54	0
+PR B (A+B) 3f33d28	162	59	0
+PR B (A+B) 3f33d28	163	60	0
+PR B (A+B) 3f33d28	164	60	0
+PR B (A+B) 3f33d28	165	65	0
+PR B (A+B) 3f33d28	166	56	0
+PR B (A+B) 3f33d28	167	59	59
+PR B (A+B) 3f33d28	168	58	58
+PR B (A+B) 3f33d28	169	64	0
+PR B (A+B) 3f33d28	170	19	0
 hardware (paulb-nl video, frames 0-560)	146	18	0
 hardware (paulb-nl video, frames 0-560)	147	43	0
 hardware (paulb-nl video, frames 0-560)	148	15	0

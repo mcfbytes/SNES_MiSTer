@@ -16,11 +16,13 @@ The prebuilt cores and the raw AVIs are assets of the pre-release
 | label | commit | release asset |
 |---|---|---|
 | upstream | `2302683` (master) | `SNES_upstream-2302683.rbf` |
-| PR A | `2ff03cf` | `SNES_A-2ff03cf.rbf` |
-| PR A+B | `18f47d6` (built from `0148bb7`, the same git tree) | `SNES_AB-18f47d6.rbf` |
+| PR A | `dcde04d` (`2ff03cf` + `dcde04d`; in the stack `18ea233`, `944cdfb`) | `SNES_A-dcde04d.rbf` |
+| PR B (A+B) | `3f33d28` (stack `b7d997f`) | `SNES_AB-3f33d28.rbf` |
 | PR C | `57160ab` | `SNES_C-57160ab.rbf` |
+| PR D (A+B+D) | `0f6b5e4` (stack `8e89569`) | `SNES_D-0f6b5e4.rbf` |
 
-Quartus 17.0.2 Lite, the `.qsf` seed. sha256 of each is in the release notes.
+Quartus 17.0.2 Lite (`theypsilon/quartus-lite-c5:17.0.2`), the `.qsf` seed. sha256 and slack of each are in the branch
+README and the release notes. Hash logs are named `<test>-<label>-<commit>.frames.tsv`.
 
 ## Re-running a pack on a MiSTer
 
@@ -32,7 +34,7 @@ tasty play <test>.lsmv --rom <test>.sfc --core SNES_<label>.rbf --record <outdir
 
 `<outdir>` gets `<test>_000.avi` and `<test>.frames.tsv`. Every recording starts at power-on and plays the same movie, so movie
 frame n is the same moment on every core. Two runs of the same core give the same hashes; compare yours with
-`hashes/<label>.frames.tsv` by the `movie_frame` and `hash` columns (`tools/hashcmp.py` in the branch root does this). Without
+`hashes/<test>-<label>.frames.tsv` by the `movie_frame` and `hash` columns (`tools/hashcmp.py` in the branch root does this). Without
 tasty, the MGL in a pack (where there is one) loads the core and ROM; the result screens of the test ROMs are static.
 
 `tools/rigrun.sh <label> <rbf> <test>...` is the loop we ran on the card. `tools/pad128k.py` makes the 128 KiB probe ROMs
@@ -53,14 +55,16 @@ frame-to-frame phase variation (the three-frame stacks in the B panels).
 
 ## Recording quality
 
-Every MiSTer recording in a pack passed this gate (`tools/recgate.py <tasty.out> <frames.tsv>`): tasty's final `rec` status
-has `missed`, `torn`, `backpressure`, `wdrop`, `werr`, `avi_drop`, `gaps` and `drift` all 0; the replay's `late`, `lost` and
-`underruns` are 0; and the hash log has no `dup_reason` other than `none` and no `core_frame` gap. A run that failed was re-run.
-The only exception allowed is a `resize` row at the mode switch before frame 10 of the 239-line Contra test, outside every
-compared window. Each pack's README carries its counters line.
+Every MiSTer recording in a pack passed this gate (`tools/recgate.py <tasty.out> <frames.tsv> 10 100000000`): tasty's final
+`rec` status has `missed`, `torn`, `backpressure`, `wdrop`, `werr`, `avi_drop`, `gaps` and `drift` all 0; the replay's
+`late`, `lost` and `underruns` are 0; and the hash log has no `dup_reason` other than `none` and no `core_frame` gap from
+movie frame 10 on. The only row before frame 10 that is not clean is the `resize` row at frame 6 of the 239-line Contra
+test. A run that failed would have been re-run; none did. Each pack's README carries its counters line.
 
 Rig: DE10-Nano, kernel `7.2.9` PREEMPT_RT, with `vm.compact_unevictable_allowed=0`, `vm.compaction_proactiveness=0` and the
-writeback workqueue cpumask `1` (set at boot). Recordings were written to the SD card.
+writeback workqueue cpumask `1`, set by the image at boot and read back before the runs (0 / 0 / 1). Recordings were written
+to the SD card. `tools/rigrun.sh` is the per-core loop; the queue that made these runs did the same, one job at a time, with
+no sleep between runs (each run is tasty's own core load, about 3 s, plus the movie).
 
 ## Panels
 
