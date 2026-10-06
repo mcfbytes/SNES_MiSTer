@@ -237,6 +237,8 @@ signal HOAM_ADDR 			: std_logic_vector(4 downto 0);
 signal HOAM_WE 			: std_logic;
 signal HOAM_X8 			: std_logic;
 signal HOAM_S 				: std_logic;
+signal HOAM_X8_Q 			: std_logic;
+signal HOAM_S_Q 			: std_logic;
 signal RANGE_ADDR 		: std_logic_vector(4 downto 0);
 signal RANGE_DATA 		: std_logic_vector(6 downto 0);
 signal RANGE_WE 			: std_logic;
@@ -284,6 +286,7 @@ signal SPR_TILE_X 		: unsigned(8 downto 0);
 signal SPR_TILE_PAL 		: std_logic_vector(2 downto 0);
 signal SPR_TILE_PRIO 	: std_logic_vector(1 downto 0);
 signal OBJ_TIME_SAVE 	: std_logic;
+signal OBJ_TIME_WRAP 	: std_logic;
 
 signal SPR_PIX_D 			: std_logic_vector(8 downto 0);
 signal SPR_PIX_Q 			: std_logic_vector(8 downto 0);
@@ -1613,8 +1616,8 @@ port map(
 RANGE_ADDR <= std_logic_vector(RANGE_CNT(4 downto 0)) when RANGE_CNT(5) = '0' else "00000";
 
 
-HOAM_X8 <= HOAM_Q(to_integer(unsigned(OAM_A(2 downto 1))&"0"));
-HOAM_S  <= HOAM_Q(to_integer(unsigned(OAM_A(2 downto 1))&"1"));
+HOAM_X8_Q <= HOAM_Q(to_integer(unsigned(OAM_A(2 downto 1))&"0"));
+HOAM_S_Q  <= HOAM_Q(to_integer(unsigned(OAM_A(2 downto 1))&"1"));
 
 process( HOAM_S, OBJSIZE )
 	variable SIZE0: std_logic;
@@ -1672,6 +1675,7 @@ begin
 		OBJ_RANGE_DONE <= '0';
 		OBJ_TIME_DONE <= '0';
 		OBJ_TIME_SAVE <= '0';
+		OBJ_TIME_WRAP <= '0';
 		OBJ_TILE_LINE <= (others => '0');
 		OBJ_TILE_COL <= (others => '0');
 		OBJ_TILE_ROW <= (others => '0');
@@ -1693,13 +1697,16 @@ begin
 		if ENABLE = '1' and  DOT_CLKF_CE = '1' then
 			if ((NO_BLANK = '1' or OAM_ADDR(8) = '0') and H_CNT(0) = '0') then
 				OAM_XY_LATCH <= OAM_DATA;
+				-- X bit 8 and size are held with X/Y, so a frozen latch in force blank stays one sprite.
+				HOAM_X8 <= HOAM_X8_Q;
+				HOAM_S <= HOAM_S_Q;
 			end if;
 		end if;
 		
 		if ENABLE = '1' and  DOT_CLKR_CE = '1' then
 			if H_CNT = LAST_DOT and V_CNT < LAST_VIS_LINE then
 				RANGE_CNT <= (others => '1');
-				if RANGE_CNT(5) /= '1' and TILES_OAM_CNT = 34 then
+				if RANGE_CNT(5) /= '1' and OBJ_TIME_WRAP = '0' and TILES_OAM_CNT = 34 then
 					OBJ_TIME_OFL <= '1';
 				end if;
 				OBJ_RANGE_DONE <= '0';
@@ -1754,6 +1761,7 @@ begin
 				TILES_OAM_CNT <= (others => '0');
 				TILES_CNT <= (others => '0');
 				OBJ_TIME_DONE <= '1';
+				OBJ_TIME_WRAP <= '0';
 			end if;
 			
 			if OBJ_TIME = '1' and H_CNT(0) = '1' then
@@ -1812,9 +1820,14 @@ begin
 					TILES_OAM_CNT <= TILES_OAM_CNT + 1;
 					TILES_CNT <= CUR_TILES_CNT + 1;
 					if ((CUR_TILES_CNT or not TILE_CNT_MASK) = 7) or ((TILE_X + 8) >= 256 and OAM_OBJ_X /= 256) then
-						NEW_RANGE_CNT := RANGE_CNT - 1;
 						TILES_CNT <= (others => '0');
-						RANGE_CNT <= NEW_RANGE_CNT;
+						-- The last entry never retires: hardware refetches it until the window ends (S-PPU1 netlist).
+						if RANGE_CNT = 0 then
+							OBJ_TIME_WRAP <= '1';
+						else
+							NEW_RANGE_CNT := RANGE_CNT - 1;
+							RANGE_CNT <= NEW_RANGE_CNT;
+						end if;
 					end if;
 					
 					OBJ_TIME_DONE <= '0';
@@ -1839,7 +1852,8 @@ begin
 				end if;
 			end if;
 				
-			if OBJ_FETCH = '1' and OBJ_TIME_DONE = '0' and H_CNT(0) = '1' then 
+			-- A slot fetched under force blank reads no VRAM and writes nothing to the line buffer.
+			if OBJ_FETCH = '1' and OBJ_TIME_DONE = '0' and FORCE_BLANK = '0' and H_CNT(0) = '1' then 
 				OBJ_TIME_SAVE <= '1';
 			elsif OBJ_TIME_SAVE = '1' and H_CNT(0) = '1' then
 				OBJ_TIME_SAVE <= '0';
