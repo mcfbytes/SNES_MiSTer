@@ -1,5 +1,12 @@
 # Evidence for the SNES H/V IRQ, PPU timing and `$2137` PRs (refs #460)
 
+**PR #513 as five commits (`ppu-timing-stack` at `ae0818c`): [`ab/E`](ab/E/README.md).** The PR was rebuilt after review
+into five commits (NMI, V counter, H/V IRQ + Mode 7, BG fetch/force blank, OBJ under force blank). `ab/E` maps each commit to
+the cores it was run as (each prebuilt `.rbf` is byte-identical to the tested build), and holds the IRQ test results, the
+Kirby Super Star `DI_WAIT` case, HblankEmuTest, the #514 combination, seed-1 timing (no 30-seed sweep for this version)
+and the hardware test kit. The sections below describe the earlier four-commit layout (labels A-D), whose recordings
+`ab/E` reuses where it says so.
+
 This branch holds evidence only: no RTL. The changes are two pull requests from `mcfbytes/SNES_MiSTer`: one stack of four
 commits, and one independent commit. The labels A, B, C and D name the evidence packs (`ab/A` ...).
 
@@ -10,8 +17,9 @@ commits, and one independent commit. The labels A, B, C and D name the evidence 
 | B | PPU BG fetch, output and force-blank timing (#460) | `ppu-timing-stack` | `b7d997f` | `3f33d28` |
 | D | the sprite stage under force blank (HblankEmuTest) | `ppu-timing-stack` | `8e89569` | `0f6b5e4` |
 | C | `$2137` latches only while `$4201` bit 7 is set | `slhv-wrio-gate` | `57160ab` | `57160ab` |
+| E | the five-commit #513 (`1f69c08`, `e98ca40`, `5fe4edd`, `dce0098`, `ae0818c`) | `ppu-timing-stack` | `ae0818c` | `ec98508` (same `.rbf`) |
 
-`ppu-timing-stack` sits on master `2302683`. Each of its commits has the same git tree as the commit it was built and
+`ppu-timing-stack` sits on master `2302683`. Rows A, B and D are its earlier four-commit layout (now replaced by E); each of those commits had the same git tree as the commit it was built and
 tested as (last column; only the commit messages differ), so the cores, recordings and hashes here, which carry the
 tested-as hashes, apply to it unchanged. "PR A" below means the stack through `944cdfb`, "PR B (A+B)" through `b7d997f`.
 C is independent of the stack.
